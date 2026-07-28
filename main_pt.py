@@ -1,0 +1,537 @@
+# =============================================================================
+# TRIER-PT MAIN SCRIPT
+# Purpose: Training and evaluation of the TRIER-PT (forward/recommendation) model
+# Components: RT model (reverse trajectory), PT model (forward recommendation)
+# =============================================================================
+
+# --------------------------
+# SECTION 1: IMPORTS
+# --------------------------
+# Import standard libraries
+import argparse
+import os
+import sys
+import time
+import numpy as np
+
+# Import PyTorch libraries
+import torch
+import torch.utils.data as Data
+import torch.optim as optim
+from torch import nn
+
+# Add current directory to path for module imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Import TRIER-specific modules
+from trier_pt import TRIER_PT           # Forward recommendation model
+from trier_rt import TRIER_RT           # Reverse trajectory model
+from dataset_duorec import TrainPTDataset, TestDataset  # Data loading classes
+from script import *                    # Utility functions (metrics, args parsing)
+from torch.utils.tensorboard import SummaryWriter  # TensorBoard logging
+writer = SummaryWriter('./tensorboard_log')
+
+
+# --------------------------
+# SECTION 2: METRIC CALCULATION FUNCTIONS
+# --------------------------
+
+def get_metric(epoch, total_result):
+    """
+    Calculate recommendation metrics from evaluation results
+    
+    Args:
+        epoch: Current epoch number
+        total_result: List of evaluation results for each sample
+        
+    Returns:
+        Dictionary containing all metrics (Recall, MRR, NDCG, ILD)
+    """
+    total_result_dict = {'epoch': epoch}
+    new_result = []
+    
+    # Calculate Recall@5, @10, @20 on full item set
+    total_result_dict['recall@5_f'] = get_metrics_full('recall@5_f', total_result)
+    total_result_dict['recall@10_f'] = get_metrics_full('recall@10_f', total_result)
+    total_result_dict['recall@20_f'] = get_metrics_full('recall@20_f', total_result)
+    
+    # Calculate MRR@5, @10, @20 on full item set
+    total_result_dict['mrr@5_f'] = get_metrics_full('mrr@5_f', total_result)
+    total_result_dict['mrr@10_f'] = get_metrics_full('mrr@10_f', total_result)
+    total_result_dict['mrr@20_f'] = get_metrics_full('mrr@20_f', total_result)
+    
+    # Calculate NDCG@5, @10, @20 on full item set
+    total_result_dict['ndcg@5_f'] = get_metrics_full('ndcg@5_f', total_result)
+    total_result_dict['ndcg@10_f'] = get_metrics_full('ndcg@10_f', total_result)
+    total_result_dict['ndcg@20_f'] = get_metrics_full('ndcg@20_f', total_result)
+    
+    # Calculate ILD (Inverse List Diversity) - lower = more diverse
+    total_result_dict['ILD@5'] = get_metrics_full('ILD@5', total_result)
+    total_result_dict['ILD@10'] = get_metrics_full('ILD@10', total_result)
+    total_result_dict['ILD@20'] = get_metrics_full('ILD@20', total_result)
+
+    return total_result_dict
+
+
+def metric_all_intervals(epoch, total_result, length=None):
+    """
+    Calculate metrics for different input sequence length intervals
+    
+    Args:
+        epoch: Current epoch number
+        total_result: List of evaluation results
+        length: List of sequence lengths for each sample
+        
+    Returns:
+        Dictionary containing overall metrics (same as get_metric)
+    """
+    # Define sequence length intervals [0-10, 10-20, 20-30, 30-40, 40-50]
+    if length is not None:
+        length_lower_bound = [0, 10, 20, 30, 40]
+        length_upper_bound = [10, 20, 30, 40, 51]
+
+        for ldx in range(len(length_lower_bound)):
+            filter_pred_list = []
+            # Filter results by sequence length interval
+            for i in range(len(total_result)):
+                if length_lower_bound[ldx] <= length[i] and length[i] < length_upper_bound[ldx]:
+                    filter_pred_list.append(total_result[i])
+            # Print metrics for this interval
+            print("input length:", length_lower_bound[ldx], "-", length_upper_bound[ldx], get_metric(epoch, filter_pred_list))
+
+    return get_metric(epoch, total_result)
+
+
+def metric_all(epoch, total_result, total_rec_set=None, cate_map=None, num_cat=None):
+    """
+    Calculate all metrics including coverage (extended version)
+    
+    Args:
+        epoch: Current epoch number
+        total_result: List of evaluation results
+        total_rec_set: Sets of recommended items (for coverage calculation)
+        cate_map: Category mapping (for category-based metrics)
+        num_cat: Number of categories
+        
+    Returns:
+        Dictionary containing all metrics
+    """
+    total_result_dict = {'epoch': epoch}
+
+    # Calculate core recommendation metrics (same as get_metric)
+    total_result_dict['recall@5_f'] = get_metrics_full('recall@5_f', total_result)
+    total_result_dict['recall@10_f'] = get_metrics_full('recall@10_f', total_result)
+    total_result_dict['recall@20_f'] = get_metrics_full('recall@20_f', total_result)
+    total_result_dict['mrr@5_f'] = get_metrics_full('mrr@5_f', total_result)
+    total_result_dict['mrr@10_f'] = get_metrics_full('mrr@10_f', total_result)
+    total_result_dict['mrr@20_f'] = get_metrics_full('mrr@20_f', total_result)
+    total_result_dict['ndcg@5_f'] = get_metrics_full('ndcg@5_f', total_result)
+    total_result_dict['ndcg@10_f'] = get_metrics_full('ndcg@10_f', total_result)
+    total_result_dict['ndcg@20_f'] = get_metrics_full('ndcg@20_f', total_result)
+    
+    # Calculate diversity metrics (ILD)
+    total_result_dict['ILD@5'] = get_metrics_full('ILD@5', total_result)
+    total_result_dict['ILD@10'] = get_metrics_full('ILD@10', total_result)
+    total_result_dict['ILD@20'] = get_metrics_full('ILD@20', total_result)
+    
+    # Calculate coverage metrics if rec sets are provided
+    if total_rec_set is not None:
+        total_result_dict['CC@5'] = get_coverage('CC@5', total_rec_set, cate_map, num_cat)
+        total_result_dict['CC@10'] = get_coverage('CC@10', total_rec_set, cate_map, num_cat)
+        total_result_dict['CC@20'] = get_coverage('CC@20', total_rec_set, cate_map, num_cat)
+
+    return total_result_dict
+
+
+# --------------------------
+# SECTION 3: MAIN EXECUTION
+# --------------------------
+
+if __name__ == '__main__':
+    # --------------------------
+    # SUBSECTION 3.1: PARSE ARGUMENTS
+    # --------------------------
+    # Parse command-line arguments (defined in script.py)
+    args = get_args()
+    
+    # Set device (GPU if available, otherwise CPU)
+    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Extract key parameters from args
+    train_file = args.tf           # Training data path
+    valid_file = args.vf           # Validation data path
+    test_file = args.ef            # Test data path
+    valid_neg_file = args.vn       # Validation negative samples path
+    test_neg_file = args.en        # Test negative samples path
+    batch_size = args.b            # Batch size for training/evaluation
+    log_step = args.ls             # Frequency of loss logging
+    learning_rate = args.l         # Learning rate for optimizer
+    epochs = args.e                # Number of training epochs
+    dropout_rate = args.dr         # Dropout rate in model
+    hidden_unit = args.hd          # Hidden dimension size
+    head_num = args.hn             # Number of attention heads
+    layer_num = args.ln            # Number of transformer layers
+    load_path = args.i             # Path to load RT model checkpoint
+    save_path = args.o             # Path to save PT model checkpoints
+    mode = args.m                  # Mode: 'train', 'valid', or 'test'
+    resume = args.r                # Whether to resume training
+    item_num = args.n              # Total number of items
+    max_seqs_len = args.ml         # Original max sequence length
+    modified_max_seqs_len = args.mml  # Extended max sequence length (for padding)
+    cate_file = args.cat           # Category file path
+    num_cat = args.n_cat           # Number of categories
+
+
+    # --------------------------
+    # SUBSECTION 3.2: LOAD AUXILIARY DATA
+    # --------------------------
+    # Load pre-trained item embeddings (for ILD calculation)
+    try:
+        item2vec = np.load("./Yelp/yelp_vec.npy")
+        item2vec = torch.tensor(item2vec)
+    except:
+        print("Warning: yelp_vec.npy not found, using random embeddings")
+        item2vec = torch.randn(item_num, hidden_unit)
+    
+    # Load category mapping (for coverage metrics)
+    try:
+        cate_map = get_cates_map(cate_file)
+    except:
+        print("Warning: cate_file not found")
+        cate_map = None
+
+
+    # --------------------------
+    # SUBSECTION 3.3: INITIALIZE RT MODEL (PRE-TRAINED)
+    # --------------------------
+    # Create RT model instance (used to process reverse sequences)
+    rt_model = TRIER_RT(item_num, 2, head_num, hidden_unit, dropout_rate, batch_size, args)
+    
+    # Load pre-trained RT model weights (trained separately)
+    rt_model_path = load_path + 'model/duorec-' + str(10) + '.pth'
+    if os.path.exists(rt_model_path):
+        rt_model.load_state_dict(torch.load(rt_model_path, map_location=args.device))
+    else:
+        print(f"Warning: RT model not found at {rt_model_path}, using randomly initialized RT model")
+        rt_model.apply(xavier_init)
+    
+    # Freeze RT model weights (no training, only used for inference)
+    for param in rt_model.parameters():
+        param.requires_grad = False
+    rt_model.eval()
+    
+    # Set random seed for reproducibility
+    init_seeds()
+
+
+    # --------------------------
+    # SUBSECTION 3.4: TRAINING MODE
+    # --------------------------
+    if mode == 'train':
+        # Create output directories if they don't exist
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+        if not os.path.exists(save_path + 'model/'):
+            os.makedirs(save_path + 'model/')
+        
+        # Open training log file (append if resuming, overwrite if starting fresh)
+        if resume:
+            fw = open(save_path + 'train_result.txt', 'a')
+        else:
+            fw = open(save_path + 'train_result.txt', 'w')
+        
+        # Create training dataset and data loader
+        dataset = TrainPTDataset(train_file, item_num, max_seqs_len, modified_max_seqs_len)
+        dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+        
+        # Create PT model instance
+        model = TRIER_PT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args)
+
+        # Load existing model if resuming training
+        last_epoch = 0
+        if resume:
+            with open(save_path + 'train_result.txt', 'r') as f:
+                content = f.readlines()
+            last_epoch = 111  # Hardcoded (note: this is a bug - should be len(content))
+            print('load model: epoch %d' % (last_epoch,))
+            model.load_state_dict(torch.load(save_path + 'model/duorec-' + str(last_epoch) + '.pth', map_location=args.device))
+        else:
+            # Initialize model weights using Xavier initialization
+            print('initialize model')
+            model.apply(xavier_init)
+        
+        # Move models to GPU if available
+        if torch.cuda.is_available():
+            model.cuda()
+            rt_model.cuda()
+        
+        # Set model to training mode
+        model.train()
+        
+        # Create optimizer (Adam)
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        
+        # Training loop
+        epoch = last_epoch
+        while epoch < epochs:
+            epoch += 1
+            step = 0
+            loss_avg = 0          # Accumulated total loss
+            loss_acc, loss_div, loss_nce = 0.0, 0.0, 0.0  # Individual loss components
+            start_time = time.time()  # Track epoch time
+            
+            # Iterate over batches
+            for batch in dataloader:
+                step += 1
+                optimizer.zero_grad()  # Reset gradients
+                
+                # Unpack batch data
+                input_session_ids, targets, negatives, sem_aug_input_session_ids, input_reverse_ids = batch
+                
+                # Move data to GPU if available
+                if torch.cuda.is_available():
+                    input_session_ids = input_session_ids.cuda()
+                    targets = targets.cuda()
+                    negatives = negatives.cuda()
+                    sem_aug_input_session_ids = sem_aug_input_session_ids.cuda()
+                    input_reverse_ids = input_reverse_ids.cuda()
+                
+                # Forward pass: get model outputs and loss components
+                output, nce_loss, div_loss, consec_loss = model.train_forward(input_session_ids, sem_aug_input_session_ids,
+                                            input_reverse_ids, rt_model, item2vec)
+                
+                # Calculate total loss (reconstruction + NCE + diversity + consecutive similarity)
+                loss, main_loss = model.rec_loss(output, targets, nce_loss, div_loss, consec_loss)
+                
+                # Skip batch if loss is NaN or Inf (numerical instability)
+                if torch.isnan(loss) or torch.isinf(loss):
+                    print(f"NaN/Inf loss detected at step {step}, skipping")
+                    continue
+                
+                # Backward pass: compute gradients
+                loss.backward()
+                
+                # Gradient clipping to prevent exploding gradients
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                
+                # Update model weights
+                optimizer.step()
+                
+                # Accumulate losses for logging
+                loss_avg += loss
+                loss_acc += main_loss
+                loss_div += div_loss
+                loss_nce += nce_loss
+                
+                # Log training progress periodically
+                if step % log_step == 0:
+                    print('epoch %d step %d loss %0.4f time %d' % (epoch, step, loss_avg / step, time.time()-start_time))
+
+            # Save model checkpoint after each epoch
+            torch.save(model.state_dict(), save_path + 'model/duorec-' + str(epoch) + '.pth')
+            
+            # Log epoch summary
+            print('epoch %d loss %0.4f time %d' % (epoch, loss_avg / step, time.time() - start_time))
+            fw.write('epoch %d loss %0.4f' % (epoch, loss_avg / step) + '\n')
+        
+        # Close log file
+        fw.close()
+
+
+    # --------------------------
+    # SUBSECTION 3.5: VALIDATION MODE
+    # --------------------------
+    result_list = []
+    if mode == "valid":
+        # Open validation log file
+        if resume:
+            fw = open(save_path + str(mode) + '_result.txt', 'a')
+        else:
+            fw = open(save_path + str(mode) + '_result.txt', 'w')
+        
+        # Create validation dataset and data loader
+        dataset = TestDataset(valid_file, valid_neg_file, item_num, modified_max_seqs_len)
+        dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+        
+        # Create PT model instance
+        model = TRIER_PT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args)
+        
+        # Move models to GPU if available
+        if torch.cuda.is_available():
+            model.cuda()
+            rt_model.cuda()
+        
+        # Set model to evaluation mode
+        model.eval()
+        
+        # Determine starting epoch
+        next_epoch = 1
+        if resume:
+            with open(save_path + str(mode) + '_result.txt', 'r') as f:
+                content = f.readlines()
+            next_epoch = len(content) + 1
+            print(str(mode) + ' from epoch %d' % (next_epoch,))
+        
+        # Evaluation loop over epochs
+        epoch = next_epoch
+        while epoch <= epochs:
+            step = 0
+            total_result = []  # Store evaluation results for this epoch
+
+            # Load model checkpoint for current epoch
+            model.load_state_dict(torch.load(save_path + 'model/duorec-' + str(epoch) + '.pth', map_location=args.device))
+            
+            # Disable gradient computation (faster inference)
+            with torch.no_grad():
+                for batch in dataloader:
+                    step += 1
+                    input_session_ids, targets, negatives, input_reverse_ids = batch
+                    
+                    # Move data to GPU if available
+                    if torch.cuda.is_available():
+                        input_session_ids = input_session_ids.cuda()
+                        targets = targets.cuda()
+                        negatives = negatives.cuda()
+                        input_reverse_ids = input_reverse_ids.cuda()
+                    
+                    # Generate recommendations using specified mode
+                    if args.t_mode == "topk":
+                        # Fast top-k generation mode
+                        output = model.test_forward(input_session_ids, input_reverse_ids, rt_model, False)
+                        output = torch.matmul(output, model.item_embedding.weight.T)  # [batch_size, item_num]
+                        _, rec_list = output.log_softmax(-1).topk(k=20, axis=-1)
+                    elif args.t_mode == "greedy":
+                        # Step-by-step greedy generation mode
+                        output, rec_list = model.test_forward(input_session_ids, input_reverse_ids, rt_model, True)
+                    else:
+                        # Use encoder-only generation (no decoder)
+                        output = model.test_forward(input_session_ids)  # [batch_size, hidden_unit]
+                        output = torch.matmul(output, model.item_embedding.weight.T)  # [batch_size, item_num]
+                        _, rec_list = output.log_softmax(-1).topk(k=20, axis=-1)
+                    
+                    # Evaluate recommendations (compute all metrics)
+                    result = evaluate_function_with_full(targets, rec_list, item2vec=item2vec)
+                    total_result.extend(result)
+
+            # Calculate aggregate metrics
+            total_result_dict = metric_all(epoch, total_result)
+            result_list.append(total_result_dict)
+            
+            # Print and save results
+            print(total_result_dict)
+            fw.write(str(total_result_dict) + '\n')
+            
+            # Save detailed results for this epoch
+            with open(save_path + str(mode) + '_result_' + str(epoch) + '.txt', 'w') as f:
+                for result in total_result:
+                    f.write(str(result) + '\n')
+            
+            epoch += 1
+        
+        fw.close()
+        
+        # Find epoch with best validation Recall@5
+        def get_best_epoch(score):
+            epcoh = 0
+            max_r5 = 0.0
+            for item in score:
+                recall = item["recall@5_f"]
+                if recall >= max_r5:
+                    max_r5 = item["recall@5_f"]
+                    epcoh = item["epoch"]
+            return max_r5, epcoh
+
+        print("Best validation Recall@5 and corresponding epoch:", get_best_epoch(result_list))
+
+
+    # --------------------------
+    # SUBSECTION 3.6: TEST MODE
+    # --------------------------
+    if mode == "test":
+        # Open test log file
+        if resume:
+            fw = open(save_path + 'test_result.txt', 'a')
+        else:
+            fw = open(save_path + 'test_result.txt', 'w')
+        
+        # Create test dataset and data loader
+        dataset = TestDataset(test_file, test_neg_file, item_num, modified_max_seqs_len)
+        dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+        
+        # Create PT model instance
+        model = TRIER_PT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args)
+        
+        # Move models to GPU if available
+        if torch.cuda.is_available():
+            model.cuda()
+            rt_model.cuda()
+        
+        # Set model to evaluation mode
+        model.eval()
+        
+        # Determine starting epoch
+        next_epoch = 1
+        if resume:
+            with open(save_path + str(mode) + '_result.txt', 'r') as f:
+                content = f.readlines()
+            next_epoch = len(content) + 1
+            print(str(mode) + ' from epoch %d' % (next_epoch,))
+        
+        # Evaluation loop over epochs
+        epoch = next_epoch
+        while epoch <= epochs:
+            step = 0
+            total_result = []      # Store evaluation results
+            total_length = []      # Store sequence lengths (for interval analysis)
+            total_rec_set = [set(), set(), set()]  # Store recommended items (for coverage)
+
+            # Load model checkpoint
+            model.load_state_dict(torch.load(save_path + 'model/duorec-' + str(epoch) + '.pth', map_location=args.device))
+            
+            # Disable gradient computation
+            with torch.no_grad():
+                for batch in dataloader:
+                    step += 1
+                    input_session_ids, targets, negatives, input_reverse_ids = batch
+                    
+                    # Calculate sequence lengths
+                    item_seq_len = (input_session_ids > 0).sum(-1).tolist()
+                    
+                    # Move data to GPU if available
+                    if torch.cuda.is_available():
+                        input_session_ids = input_session_ids.cuda()
+                        targets = targets.cuda()
+                        negatives = negatives.cuda()
+                        input_reverse_ids = input_reverse_ids.cuda()
+                    
+                    # Generate recommendations
+                    if args.t_mode == "topk":
+                        output = model.test_forward(input_session_ids, input_reverse_ids, rt_model, False)
+                        output = torch.matmul(output, model.item_embedding.weight.T)
+                        _, rec_list = output.log_softmax(-1).topk(k=20, axis=-1)
+                    elif args.t_mode == "greedy":
+                        output, rec_list = model.test_forward(input_session_ids, input_reverse_ids, rt_model, True)
+                    else:
+                        pass
+                    
+                    # Evaluate and accumulate results
+                    result = evaluate_function_with_full(targets, rec_list, item2vec=item2vec)
+                    total_rec_set = get_coverage_set(total_rec_set, rec_list)
+                    total_result.extend(result)
+                    total_length.extend(item_seq_len)
+
+            # Calculate metrics (including per-interval analysis)
+            total_result_dict = metric_all_intervals(epoch, total_result, total_length)
+
+            # Print and save results
+            print(total_result_dict)
+            fw.write(str(total_result_dict) + '\n')
+            
+            # Save detailed results for this epoch
+            with open(save_path + str(mode) + '_result_' + str(epoch) + '.txt', 'w') as f:
+                for result in total_result:
+                    f.write(str(result) + '\n')
+            
+            epoch += 1
+        
+        fw.close()

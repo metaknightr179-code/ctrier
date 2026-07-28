@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Model checkpoints and weights
+*.pth
+*.pt
+*.pkl
+*.h5
+*.ckpt
+
+# Training output directories
+save*/
+checkpoints/
+outputs/
+runs/
+
+# TensorBoard logs
+tensorboard_log/
+events.out.tfevents*
+
+# Datasets
+Yelp/
+KuaiRec/
+data/
+datasets/
+
+# Logs
+*.log
+logs/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.local
+.env.*
+
+# Large data files
+*.npy
+*.npz
+*.csv
+*.zip
+*.tar.gz
+*.tar
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
