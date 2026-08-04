@@ -59,8 +59,12 @@ def get_args():
     parser.add_argument('-t_mode', type=str, default="greedy", help='topk:使用第一个step的logit去预测topk, '
                                                     'greedy: step by step生成')
     parser.add_argument('-ssl', type=str, default="us_x", help='默认使用us_x, 设置为none不适用CL loss')
+    parser.add_argument('-last_epoch', type=int, default=0, help='手动指定恢复训练的起始epoch数')
 
     parser.add_argument('-lm', type=int, default=5, help='向左增广数量，默认设置为5')
+    parser.add_argument('-early_stop', action='store_true', help='启用早停机制，当loss收敛时自动停止')
+    parser.add_argument('-patience', type=int, default=30, help='早停耐心值：连续N个epoch无改善则停止')
+    parser.add_argument('-min_delta', type=float, default=0.0001, help='早停最小改善幅度')
 
     args = parser.parse_args()
 

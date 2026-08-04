@@ -59,8 +59,9 @@ class TRIER_PT(nn.Module):
         self.args = args
         self.inf = torch.tensor([0.0], device=args.device)  # Used for masking
         
-        # Consecutive similarity loss weight (DISABLED)
-        # self.lmd_consec = 0.1       # Lambda for consecutive similarity loss
+        # Consecutive similarity loss weight
+        # Note: Use 0.01 (not 0.1) to avoid coverage collapse
+        self.lmd_consec = 0.01       # Lambda for consecutive similarity loss
 
         # --------------------------
         # MODEL LAYERS
@@ -195,8 +196,8 @@ class TRIER_PT(nn.Module):
             # Calculate diversity loss
             div_loss = self.diversity_loss(output_logit, output_logit_greedy, output_token, output_token_greedy, item2vec)
             
-            # Calculate consecutive similarity loss on diverse recommendations (DISABLED)
-            # consec_loss = self.consecutive_similarity_loss(output_token, item2vec)
+            # Calculate consecutive similarity loss on diverse recommendations
+            consec_loss = self.consecutive_similarity_loss(output_token, item2vec)
 
         # Calculate contrastive (NCE) loss if SSL is enabled
         if self.ssl == 'us_x':
@@ -426,9 +427,8 @@ class TRIER_PT(nn.Module):
         rec_loss = -output.log_softmax(dim=-1).gather(dim=-1, index=targets).squeeze(-1)
         main_loss = rec_loss.mean()
         
-        # Total loss = reconstruction + NCE + diversity
-        # Consecutive similarity loss is DISABLED
-        loss = main_loss + nce_loss + div_loss  # + self.lmd_consec * consec_loss (DISABLED)
+        # Total loss = reconstruction + NCE + diversity + consecutive similarity
+        loss = main_loss + nce_loss + div_loss + self.lmd_consec * consec_loss
         
         return loss, main_loss
 

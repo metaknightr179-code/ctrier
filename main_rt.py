@@ -105,8 +105,11 @@ if __name__ == '__main__':
         if resume:
             with open(save_path + 'train_result.txt', 'r') as f:
                 content = f.readlines()
-            last_epoch = 79 # len(content)
-            print('load model：epoch %d' % (last_epoch,))
+            # Auto-detect last epoch from log file, or use command-line arg
+            last_epoch = len(content)
+            if last_epoch == 0:
+                last_epoch = args.last_epoch  # Fallback to manual specification
+            print('load model: epoch %d' % (last_epoch,))
             model.load_state_dict(torch.load(save_path + 'model/duorec-' + str(last_epoch) + '.pth', map_location=args.device))
         else:
             print('initialize model')
@@ -115,6 +118,9 @@ if __name__ == '__main__':
             model.cuda()
         model.train()
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        # Early stopping tracking
+        best_loss = float('inf')
+        patience_counter = 0
         epoch = last_epoch
         while epoch < epochs:
             epoch += 1
@@ -138,10 +144,29 @@ if __name__ == '__main__':
                 if step % log_step == 0:
                     print('epoch %d step %d loss %0.4f time %d' % (
                     epoch, step, acc_loss / step, time.time()-start_time))
+            
+            avg_loss = acc_loss.item() / step
             torch.save(model.state_dict(), save_path + 'model/duorec-' + str(epoch) + '.pth')
             print('epoch %d loss %0.4f time %d' % (
-            epoch, acc_loss / step, time.time() - start_time))
-            fw.write('epoch %d loss %0.4f' % (epoch, acc_loss / step) + '\n')
+            epoch, avg_loss, time.time() - start_time))
+            fw.write('epoch %d loss %0.4f' % (epoch, avg_loss) + '\n')
+            
+            # Early stopping check
+            if args.early_stop:
+                if avg_loss < best_loss - args.min_delta:
+                    best_loss = avg_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if epoch % 10 == 0:
+                        print(f'  [EarlyStop] No improvement for {patience_counter}/{args.patience} epochs (best={best_loss:.4f}, current={avg_loss:.4f})')
+                
+                if patience_counter >= args.patience:
+                    print(f'\n[EarlyStopping] Loss converged! Stopping at epoch {epoch}.')
+                    print(f'  Best loss: {best_loss:.4f} at earlier epoch')
+                    print(f'  No improvement for {patience_counter} epochs (min_delta={args.min_delta})')
+                    break
+        
         fw.close()
 
     if mode == "valid":

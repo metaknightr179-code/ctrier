@@ -31,7 +31,8 @@ from collections import defaultdict
 
 
 def convert_interactions(input_csv, output_train, output_valid, output_test, 
-                         min_watch_ratio=0.1, use_avg_watch_ratio=False, min_item_users=0):
+                         min_watch_ratio=0.1, use_avg_watch_ratio=False, min_item_users=0,
+                         dedup_strategy='highest_watch_ratio'):
     """
     Convert KuaiRec interaction CSV to Yelp-style sequence files.
     
@@ -41,11 +42,15 @@ def convert_interactions(input_csv, output_train, output_valid, output_test,
       keep only pairs where avg_watch_ratio >= min_watch_ratio
     - Item popularity filtering (min_item_users > 0): Remove items with fewer than min_item_users unique viewers
     
+    Dedup strategies:
+    - 'highest_watch_ratio' (default): Keep the interaction with the highest watch_ratio
+    - 'first_appearance': Keep the interaction with the earliest timestamp
+    
     Steps:
     1. Read interactions with engagement signals
     2. (Optional) Filter items by minimum unique users
     3. Filter interactions based on watch_ratio (individual or average)
-    4. Deduplicate repeated user-video interactions (keep highest watch_ratio)
+    4. Deduplicate repeated user-video interactions
     5. Sort by user_id and timestamp
     6. Group interactions by user to create sequences
     7. Split sequences into train/valid/test (time-based)
@@ -59,6 +64,7 @@ def convert_interactions(input_csv, output_train, output_valid, output_test,
         min_watch_ratio: Minimum watch_ratio threshold (default: 0.1)
         use_avg_watch_ratio: If True, use average watch_ratio per user-video pair (default: False)
         min_item_users: Minimum number of unique users that must watch an item (default: 0, no filtering)
+        dedup_strategy: How to pick one interaction when user-video pair has multiple
     """
     print(f"Reading interactions from {input_csv}...")
     if use_avg_watch_ratio:
@@ -67,6 +73,12 @@ def convert_interactions(input_csv, output_train, output_valid, output_test,
         print(f"Using individual watch_ratio filtering with threshold >= {min_watch_ratio}")
     if min_item_users > 0:
         print(f"Filtering items with fewer than {min_item_users} unique viewers")
+    
+    # Print dedup strategy
+    if dedup_strategy == 'first_appearance':
+        print("Dedup strategy: first_appearance (keep earliest timestamp)")
+    else:
+        print("Dedup strategy: highest_watch_ratio (default, keep best engagement)")
     
     # Read all interactions with engagement signals
     all_interactions = []
@@ -132,8 +144,13 @@ def convert_interactions(input_csv, output_train, output_valid, output_test,
         for key, interactions in user_video_groups.items():
             avg_watch_ratio = sum(i['watch_ratio'] for i in interactions) / len(interactions)
             if avg_watch_ratio >= min_watch_ratio:
-                # For retained pairs, keep the interaction with highest watch_ratio
-                best_interaction = max(interactions, key=lambda i: (i['watch_ratio'], i['timestamp']))
+                # For retained pairs, pick the best interaction based on strategy
+                if dedup_strategy == 'first_appearance':
+                    # Keep the interaction with earliest timestamp
+                    best_interaction = min(interactions, key=lambda i: (i['timestamp'], i['watch_ratio']))
+                else:
+                    # Keep the interaction with highest watch_ratio
+                    best_interaction = max(interactions, key=lambda i: (i['watch_ratio'], i['timestamp']))
                 filtered_pairs.append(best_interaction)
         
         print(f"User-video pairs with avg_watch_ratio >= {min_watch_ratio}: {len(filtered_pairs)} ({len(filtered_pairs)/len(user_video_groups)*100:.1f}%)")
@@ -147,9 +164,14 @@ def convert_interactions(input_csv, output_train, output_valid, output_test,
         ]
         print(f"Interactions after watch_ratio filter: {len(filtered_interactions)} ({len(filtered_interactions)/len(all_interactions)*100:.1f}%)")
         
-        # Deduplicate: for each user-video pair, keep only the interaction with highest watch_ratio
-        print("Deduplicating user-video interactions...")
-        filtered_interactions.sort(key=lambda i: (i['user_id'], i['video_id'], -i['watch_ratio'], -i['timestamp']))
+        # Deduplicate based on strategy
+        print(f"Deduplicating user-video interactions (strategy: {dedup_strategy})...")
+        if dedup_strategy == 'first_appearance':
+            # Sort by user, video, then earliest timestamp first
+            filtered_interactions.sort(key=lambda i: (i['user_id'], i['video_id'], i['timestamp']))
+        else:
+            # Sort by user, video, then highest watch_ratio first (tiebreak by timestamp)
+            filtered_interactions.sort(key=lambda i: (i['user_id'], i['video_id'], -i['watch_ratio'], -i['timestamp']))
         
         # Keep only the first occurrence for each user-video pair
         deduplicated = []
@@ -181,25 +203,24 @@ def convert_interactions(input_csv, output_train, output_valid, output_test,
         print(f"  - Average: {sum(seq_lengths)/len(seq_lengths):.1f}")
         print(f"  - Median: {sorted(seq_lengths)[len(seq_lengths)//2]}")
     
-    # Convert sequences to Yelp format lines
+    # Convert sequences to Yelp format lines (space-separated)
     all_lines = []
     for user_id, items in user_sequences.items():
         if len(items) >= 2:  # Need at least 2 items for train/test split
             items_str = ' '.join(map(str, items))
-            all_lines.append(f"{user_id}→{items_str}")
+            all_lines.append(f"{user_id} {items_str}")
     
     print(f"Generated {len(all_lines)} sequences (users with >=2 items)")
     
     # Split into train/valid/test (time-based split per user)
-    # We'll use the last items for validation and test
     train_lines = []
     valid_lines = []
     test_lines = []
     
     for line in all_lines:
-        parts = line.split('→')
+        parts = line.split(' ')
         user_id = parts[0]
-        items = parts[1].split()
+        items = parts[1:]
         
         # Time-based split: use all but last 2 items for train
         # Second-to-last for validation, last for test
@@ -208,12 +229,12 @@ def convert_interactions(input_csv, output_train, output_valid, output_test,
             valid_items = items[:-1]
             test_items = items
             
-            train_lines.append(f"{user_id}→{' '.join(train_items)}")
-            valid_lines.append(f"{user_id}→{' '.join(valid_items)}")
-            test_lines.append(f"{user_id}→{' '.join(test_items)}")
+            train_lines.append(f"{user_id} {' '.join(train_items)}")
+            valid_lines.append(f"{user_id} {' '.join(valid_items)}")
+            test_lines.append(f"{user_id} {' '.join(test_items)}")
         elif len(items) == 2:
             # Only 2 items: train with first, valid/test with both
-            train_lines.append(f"{user_id}→{items[0]}")
+            train_lines.append(f"{user_id} {items[0]}")
             valid_lines.append(line)
             test_lines.append(line)
     
@@ -238,7 +259,7 @@ def convert_categories(input_csv, output_cate):
     Convert KuaiRec item_categories.csv to Yelp-style category file.
     
     KuaiRec format: video_id, feat (list like "[8]" or "[27, 9]")
-    Yelp format: item_id→category1 category2 ...
+    Yelp format: item_id category1 category2 ... (space-separated)
     """
     print(f"Reading categories from {input_csv}...")
     
@@ -254,7 +275,7 @@ def convert_categories(input_csv, output_cate):
                 categories = json.loads(feat_str)
                 if isinstance(categories, list):
                     categories_str = ' '.join(map(str, categories))
-                    cate_lines.append(f"{video_id}→{categories_str}")
+                    cate_lines.append(f"{video_id} {categories_str}")
             except json.JSONDecodeError:
                 # Handle cases where parsing fails
                 print(f"Warning: Could not parse categories for video {video_id}: {feat_str}")
@@ -269,32 +290,58 @@ def convert_categories(input_csv, output_cate):
 def generate_negatives(test_file, output_neg_file, item_num):
     """
     Generate negative samples file for testing.
-    Yelp format: each line has 99 negative item IDs.
+    Yelp format: each line has 99 negative item IDs (space-separated).
+    Uses fast rejection sampling with numpy.
     """
     print(f"Generating negatives for {test_file}...")
     
-    import random
+    import numpy as np
     
-    negatives = []
+    # Read all test sequences (space-separated format: user_id item1 item2 ...)
+    sequences = []
     with open(test_file, 'r') as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
-            parts = line.split('→')
-            items = list(map(int, parts[1].split()))
-            
-            # Get all items in the sequence (to avoid sampling as negatives)
-            seq_items = set(items)
-            
-            # Generate 99 random negative items
-            neg_items = []
-            while len(neg_items) < 99:
-                neg = random.randint(1, item_num - 1)
-                if neg not in seq_items:
-                    neg_items.append(neg)
-            
-            negatives.append(' '.join(map(str, neg_items)))
+            parts = line.split(' ')
+            items = list(map(int, parts[1:]))  # Skip user_id
+            sequences.append(items)
+    
+    print(f"  Found {len(sequences)} test sequences")
+    
+    # Convert sequences to list of sets for fast lookup
+    seq_sets = [set(items) for items in sequences]
+    
+    # Pre-compute candidate pool
+    all_items = np.arange(1, item_num)
+    n_total = len(all_items)
+    
+    print(f"  Generating negatives...")
+    
+    negatives = []
+    rng = np.random.default_rng(4444)
+    
+    for i, seq_set in enumerate(seq_sets):
+        # Rejection sampling: generate extra candidates, filter, take first 99
+        # Sequences have up to ~3300 items out of 10727, rejection rate ~31%
+        # Generate 250 samples to ensure enough valid negatives even for large sequences
+        n_extra = 250
+        candidates = rng.choice(all_items, size=n_extra, replace=False)
+        
+        # Filter out items in the sequence
+        neg_items = [int(c) for c in candidates if int(c) not in seq_set][:99]
+        
+        # If not enough (rare), generate more
+        while len(neg_items) < 99:
+            extra = rng.choice(all_items, size=99, replace=False)
+            neg_items.extend([int(c) for c in extra if int(c) not in seq_set])
+            neg_items = neg_items[:99]
+        
+        negatives.append(' '.join(map(str, neg_items)))
+        
+        if (i + 1) % 1000 == 0:
+            print(f"  Progress: {i+1}/{len(sequences)} ({(i+1)/len(sequences)*100:.1f}%)")
     
     print(f"Writing {len(negatives)} negative samples to {output_neg_file}")
     with open(output_neg_file, 'w') as f:
@@ -328,6 +375,11 @@ def main():
     parser.add_argument('--min_item_users', type=int, default=0, 
                         help='Minimum number of unique users that must watch an item '
                              '(default: 0, no filtering). Use to remove rare items.')
+    parser.add_argument('--dedup_strategy', type=str, default='highest_watch_ratio',
+                        choices=['highest_watch_ratio', 'first_appearance'],
+                        help='How to pick one interaction when a user-video pair has multiple: '
+                             '"highest_watch_ratio" (keep best engagement, default) or '
+                             '"first_appearance" (keep earliest timestamp)')
     
     args = parser.parse_args()
     
@@ -353,18 +405,34 @@ def main():
         print(f"Error: Categories file not found at {categories_path}")
         return
     
-    # Count items for negative sampling
-    item_num = count_unique_items(interaction_path)
-    print(f"Total unique items: {item_num}")
+    # Count items for negative sampling (from raw data)
+    raw_item_num = count_unique_items(interaction_path)
+    print(f"Total unique items (raw): {raw_item_num}")
     
     # Convert interactions (with engagement signal filtering)
     convert_interactions(interaction_path, output_train, output_valid, output_test, 
                          min_watch_ratio=args.min_watch_ratio,
                          use_avg_watch_ratio=args.use_avg_watch_ratio,
-                         min_item_users=args.min_item_users)
+                         min_item_users=args.min_item_users,
+                         dedup_strategy=args.dedup_strategy)
     
     # Convert categories
     convert_categories(categories_path, output_cate)
+    
+    # Count actual item IDs used in the filtered test file for negative sampling
+    actual_item_num = 0
+    with open(output_test, 'r') as f:
+        for line in f:
+            if line.strip():
+                parts = line.split(' ')
+                if len(parts) > 1:
+                    items = list(map(int, parts[1:]))
+                    if items:
+                        max_item = max(items)
+                        actual_item_num = max(actual_item_num, max_item + 1)
+    
+    item_num = max(raw_item_num, actual_item_num)
+    print(f"Item count for negative sampling: {item_num}")
     
     # Generate negatives
     generate_negatives(output_test, output_neg, item_num)

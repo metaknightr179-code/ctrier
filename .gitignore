@@ -36,6 +36,7 @@ events.out.tfevents*
 # Datasets
 Yelp/
 KuaiRec/
+KuaiRec_variants/
 data/
 datasets/
 
@@ -59,6 +60,11 @@ logs/
 .env
 .env.local
 .env.*
+
+# SSH keys
+*.pem
+newkey*
+key2*
 
 # Large data files
 *.npy

@@ -271,6 +271,10 @@ if __name__ == '__main__':
         # Create optimizer (Adam)
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
         
+        # Early stopping tracking
+        best_loss = float('inf')
+        patience_counter = 0
+        
         # Training loop
         epoch = last_epoch
         while epoch < epochs:
@@ -327,12 +331,31 @@ if __name__ == '__main__':
                 if step % log_step == 0:
                     print('epoch %d step %d loss %0.4f time %d' % (epoch, step, loss_avg / step, time.time()-start_time))
 
+            # Calculate average loss for this epoch
+            avg_loss = loss_avg.item() / step if step > 0 else float('inf')
+            
             # Save model checkpoint after each epoch
             torch.save(model.state_dict(), save_path + 'model/duorec-' + str(epoch) + '.pth')
             
             # Log epoch summary
-            print('epoch %d loss %0.4f time %d' % (epoch, loss_avg / step, time.time() - start_time))
-            fw.write('epoch %d loss %0.4f' % (epoch, loss_avg / step) + '\n')
+            print('epoch %d loss %0.4f time %d' % (epoch, avg_loss, time.time() - start_time))
+            fw.write('epoch %d loss %0.4f' % (epoch, avg_loss) + '\n')
+            
+            # Early stopping check
+            if args.early_stop:
+                if avg_loss < best_loss - args.min_delta:
+                    best_loss = avg_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if epoch % 10 == 0:
+                        print(f'  [EarlyStop] No improvement for {patience_counter}/{args.patience} epochs (best={best_loss:.4f}, current={avg_loss:.4f})')
+                
+                if patience_counter >= args.patience:
+                    print(f'\n[EarlyStopping] Loss converged! Stopping at epoch {epoch}.')
+                    print(f'  Best loss: {best_loss:.4f} at earlier epoch')
+                    print(f'  No improvement for {patience_counter} epochs (min_delta={args.min_delta})')
+                    break
         
         # Close log file
         fw.close()
