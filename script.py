@@ -35,7 +35,7 @@ def get_args():
     parser.add_argument('-b', type=int, default=256, help='批量大小')
     parser.add_argument('-bt', type=int, default=256, help='train批量大小')
     parser.add_argument('-bv', type=int, default=256, help='valid and test 批量大小')
-    parser.add_argument('-ls', type=int, default=50, help='log_step')
+    parser.add_argument('-ls', type=int, default=10, help='log_step')
     parser.add_argument('-l', type=float, default=1e-3, help='学习率')
     parser.add_argument('-e', type=int, default=300, help='训练轮数')
     parser.add_argument('-dr', type=float, default=0.5, help='正则化')

@@ -284,6 +284,7 @@ if __name__ == '__main__':
             loss_acc, loss_div, loss_nce = 0.0, 0.0, 0.0  # Individual loss components
             start_time = time.time()  # Track epoch time
             
+            total_batches = len(dataloader)
             # Iterate over batches
             for batch in dataloader:
                 step += 1
@@ -309,7 +310,7 @@ if __name__ == '__main__':
                 
                 # Skip batch if loss is NaN or Inf (numerical instability)
                 if torch.isnan(loss) or torch.isinf(loss):
-                    print(f"NaN/Inf loss detected at step {step}, skipping")
+                    print(f"NaN/Inf loss detected at step {step}, skipping", flush=True)
                     continue
                 
                 # Backward pass: compute gradients
@@ -328,8 +329,8 @@ if __name__ == '__main__':
                 loss_nce += nce_loss
                 
                 # Log training progress periodically
-                if step % log_step == 0:
-                    print('epoch %d step %d loss %0.4f time %d' % (epoch, step, loss_avg.item() / step, time.time()-start_time))
+                if step % log_step == 0 or step == total_batches:
+                    print('epoch %d step %d/%d loss %0.4f time %d' % (epoch, step, total_batches, loss_avg.item() / step, time.time()-start_time), flush=True)
 
             # Calculate average loss for this epoch
             avg_loss = loss_avg.item() / step if step > 0 else float('inf')
@@ -338,7 +339,7 @@ if __name__ == '__main__':
             torch.save(model.state_dict(), save_path + 'model/duorec-' + str(epoch) + '.pth')
             
             # Log epoch summary
-            print('epoch %d loss %0.4f time %d' % (epoch, avg_loss, time.time() - start_time))
+            print('epoch %d loss %0.4f time %d' % (epoch, avg_loss, time.time() - start_time), flush=True)
             fw.write('epoch %d loss %0.4f' % (epoch, avg_loss) + '\n')
             
             # Early stopping check
@@ -349,11 +350,11 @@ if __name__ == '__main__':
                 else:
                     patience_counter += 1
                     if epoch % 10 == 0:
-                        print(f'  [EarlyStop] No improvement for {patience_counter}/{args.patience} epochs (best={best_loss:.4f}, current={avg_loss:.4f})')
+                        print(f'  [EarlyStop] No improvement for {patience_counter}/{args.patience} epochs (best={best_loss:.4f}, current={avg_loss:.4f})', flush=True)
                 
                 if patience_counter >= args.patience:
-                    print(f'\n[EarlyStopping] Loss converged! Stopping at epoch {epoch}.')
-                    print(f'  Best loss: {best_loss:.4f} at earlier epoch')
+                    print(f'\n[EarlyStopping] Loss converged! Stopping at epoch {epoch}.', flush=True)
+                    print(f'  Best loss: {best_loss:.4f} at earlier epoch', flush=True)
                     print(f'  No improvement for {patience_counter} epochs (min_delta={args.min_delta})')
                     break
         

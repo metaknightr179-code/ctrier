@@ -127,6 +127,7 @@ if __name__ == '__main__':
             step = 0
             acc_loss = 0
             start_time = time.time()
+            total_batches = len(dataloader)
             for batch in dataloader:
                 step += 1
                 optimizer.zero_grad()
@@ -141,14 +142,14 @@ if __name__ == '__main__':
                 loss.backward()
                 optimizer.step()
                 acc_loss += loss
-                if step % log_step == 0:
-                    print('epoch %d step %d loss %0.4f time %d' % (
-                    epoch, step, acc_loss.item() / step, time.time()-start_time))
+                if step % log_step == 0 or step == total_batches:
+                    print('epoch %d step %d/%d loss %0.4f time %d' % (
+                    epoch, step, total_batches, acc_loss.item() / step, time.time()-start_time), flush=True)
             
             avg_loss = acc_loss.item() / step
             torch.save(model.state_dict(), save_path + 'model/duorec-' + str(epoch) + '.pth')
             print('epoch %d loss %0.4f time %d' % (
-            epoch, avg_loss, time.time() - start_time))
+            epoch, avg_loss, time.time() - start_time), flush=True)
             fw.write('epoch %d loss %0.4f' % (epoch, avg_loss) + '\n')
             
             # Early stopping check
