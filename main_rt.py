@@ -143,7 +143,7 @@ if __name__ == '__main__':
                 acc_loss += loss
                 if step % log_step == 0:
                     print('epoch %d step %d loss %0.4f time %d' % (
-                    epoch, step, acc_loss / step, time.time()-start_time))
+                    epoch, step, acc_loss.item() / step, time.time()-start_time))
             
             avg_loss = acc_loss.item() / step
             torch.save(model.state_dict(), save_path + 'model/duorec-' + str(epoch) + '.pth')

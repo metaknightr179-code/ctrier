@@ -329,7 +329,7 @@ if __name__ == '__main__':
                 
                 # Log training progress periodically
                 if step % log_step == 0:
-                    print('epoch %d step %d loss %0.4f time %d' % (epoch, step, loss_avg / step, time.time()-start_time))
+                    print('epoch %d step %d loss %0.4f time %d' % (epoch, step, loss_avg.item() / step, time.time()-start_time))
 
             # Calculate average loss for this epoch
             avg_loss = loss_avg.item() / step if step > 0 else float('inf')
