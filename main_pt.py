@@ -252,7 +252,10 @@ if __name__ == '__main__':
         if resume:
             with open(save_path + 'train_result.txt', 'r') as f:
                 content = f.readlines()
-            last_epoch = 111  # Hardcoded (note: this is a bug - should be len(content))
+            # Auto-detect last epoch from log file, or use command-line arg
+            last_epoch = len(content)
+            if last_epoch == 0:
+                last_epoch = args.last_epoch  # Fallback to manual specification
             print('load model: epoch %d' % (last_epoch,))
             model.load_state_dict(torch.load(save_path + 'model/duorec-' + str(last_epoch) + '.pth', map_location=args.device))
         else:
