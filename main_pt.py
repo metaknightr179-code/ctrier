@@ -212,11 +212,17 @@ if __name__ == '__main__':
     rt_model = TRIER_RT(item_num, 2, head_num, hidden_unit, dropout_rate, batch_size, args)
     
     # Load pre-trained RT model weights (trained separately)
-    rt_model_path = load_path + 'model/duorec-' + str(10) + '.pth'
-    if os.path.exists(rt_model_path):
+    # Auto-detect the latest checkpoint instead of hardcoding epoch 10
+    import glob
+    rt_checkpoints = glob.glob(load_path + 'model/duorec-*.pth')
+    if rt_checkpoints:
+        rt_epochs = [int(f.split('duorec-')[1].split('.pth')[0]) for f in rt_checkpoints]
+        best_rt_epoch = max(rt_epochs)
+        rt_model_path = load_path + 'model/duorec-' + str(best_rt_epoch) + '.pth'
+        print(f'Loading RT model from epoch {best_rt_epoch}')
         rt_model.load_state_dict(torch.load(rt_model_path, map_location=args.device))
     else:
-        print(f"Warning: RT model not found at {rt_model_path}, using randomly initialized RT model")
+        print(f"Warning: No RT model checkpoints found in {load_path}model/, using randomly initialized RT model")
         rt_model.apply(xavier_init)
     
     # Freeze RT model weights (no training, only used for inference)
