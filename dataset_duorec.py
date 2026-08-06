@@ -162,7 +162,7 @@ class TrainPTDataset(Dataset):
         input_reverse_ids = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
         if len(session) > 1:
             rev_seq = session[1:]  # Skip first item for reverse
-            rev_seq = rev_seq[-self.modified_max_seq_len:]
+            rev_seq = rev_seq[-self.max_seq_len:]
             input_reverse_ids[-len(rev_seq):] = torch.tensor(rev_seq, dtype=torch.long)
         
         # Generate negative samples
@@ -196,10 +196,11 @@ class TrainPTDataset(Dataset):
 # Output: Session sequences, targets, negatives, reverse sequences
 # --------------------------
 class TestDataset(Dataset):
-    def __init__(self, data_file, neg_file, item_num, modified_max_seq_len):
+    def __init__(self, data_file, neg_file, item_num, max_seq_len, modified_max_seq_len):
         self.data = []
         self.negatives = []
         self.item_num = item_num
+        self.max_seq_len = max_seq_len
         self.modified_max_seq_len = modified_max_seq_len
         
         # Load test data
@@ -242,7 +243,7 @@ class TestDataset(Dataset):
         input_reverse_ids = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
         if len(session) > 1:
             rev_seq = session[1:]
-            rev_seq = rev_seq[-self.modified_max_seq_len:]
+            rev_seq = rev_seq[-self.max_seq_len:]
             input_reverse_ids[-len(rev_seq):] = torch.tensor(rev_seq, dtype=torch.long)
         
         # Get negative samples (from file or generate if not available)

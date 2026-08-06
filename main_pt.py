@@ -387,7 +387,7 @@ if __name__ == '__main__':
             fw = open(save_path + str(mode) + '_result.txt', 'w')
         
         # Create validation dataset and data loader
-        dataset = TestDataset(valid_file, valid_neg_file, item_num, modified_max_seqs_len)
+        dataset = TestDataset(valid_file, valid_neg_file, item_num, max_seqs_len, modified_max_seqs_len)
         dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
         
         # Create PT model instance
@@ -492,7 +492,7 @@ if __name__ == '__main__':
             fw = open(save_path + 'test_result.txt', 'w')
         
         # Create test dataset and data loader
-        dataset = TestDataset(test_file, test_neg_file, item_num, modified_max_seqs_len)
+        dataset = TestDataset(test_file, test_neg_file, item_num, max_seqs_len, modified_max_seqs_len)
         dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
         
         # Create PT model instance

@@ -177,7 +177,7 @@ if __name__ == '__main__':
             fw = open(save_path + 'valid_result.txt', 'a')
         else:
             fw = open(save_path + 'valid_result.txt', 'w')
-        dataset = TestDataset(valid_file, valid_neg_file, item_num, modified_max_seqs_len)
+        dataset = TestDataset(valid_file, valid_neg_file, item_num, max_seqs_len, modified_max_seqs_len)
         dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
         model = TRIER_RT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args=args)
         if torch.cuda.is_available():
@@ -227,7 +227,7 @@ if __name__ == '__main__':
             fw = open(save_path + 'test_result.txt', 'a')
         else:
             fw = open(save_path + 'test_result.txt', 'w')
-        dataset = TestDataset(test_file, test_neg_file, item_num, modified_max_seqs_len)
+        dataset = TestDataset(test_file, test_neg_file, item_num, max_seqs_len, modified_max_seqs_len)
         dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
         model = TRIER_RT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args)
         if torch.cuda.is_available():
