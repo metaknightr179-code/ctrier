@@ -101,7 +101,8 @@ def evaluate_rt_checkpoint(model_path, test_file, neg_file, item_num, batch_size
     model.eval()
     
     # Load test dataset
-    dataset = TestDataset(test_file, neg_file, item_num, max_seq_len)
+    modified_max_seq_len = 72
+    dataset = TestDataset(test_file, neg_file, item_num, max_seq_len, modified_max_seq_len)
     dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
     
     # Evaluate
