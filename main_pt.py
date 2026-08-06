@@ -172,7 +172,11 @@ if __name__ == '__main__':
     head_num = args.hn             # Number of attention heads
     layer_num = args.ln            # Number of transformer layers
     load_path = args.i             # Path to load RT model checkpoint
+    if not load_path.endswith('/'):
+        load_path += '/'
     save_path = args.o             # Path to save PT model checkpoints
+    if not save_path.endswith('/'):
+        save_path += '/'
     mode = args.m                  # Mode: 'train', 'valid', or 'test'
     resume = args.r                # Whether to resume training
     item_num = args.n              # Total number of items

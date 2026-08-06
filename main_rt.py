@@ -81,6 +81,8 @@ if __name__ == '__main__':
     head_num = args.hn
     layer_num = args.ln
     save_path = args.o
+    if not save_path.endswith('/'):
+        save_path += '/'
     mode = args.m
     resume = args.r
     item_num = args.n
