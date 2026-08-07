@@ -5,7 +5,7 @@
 # Supports resuming: automatically detects existing checkpoints and resumes
 # =============================================================================
 
-set -e
+# Don't use set -e — we want to continue other variants if one fails
 
 VARIANTS=(
     "kuairec_highest_individual"

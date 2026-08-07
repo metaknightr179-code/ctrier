@@ -62,6 +62,10 @@ class TRIER_PT(nn.Module):
         # Consecutive similarity loss weight
         # Note: Use 0.01 (not 0.1) to avoid coverage collapse
         self.lmd_consec = 0.01       # Lambda for consecutive similarity loss
+        # Respect -no_consec flag: disables consecutive similarity loss but keeps overall diversity loss
+        self.use_consec = not getattr(args, 'no_consec', False)
+        if not self.use_consec:
+            print("[TRIER_PT] Consecutive similarity loss DISABLED (-no_consec flag set)")
 
         # --------------------------
         # MODEL LAYERS
@@ -196,8 +200,9 @@ class TRIER_PT(nn.Module):
             # Calculate diversity loss
             div_loss = self.diversity_loss(output_logit, output_logit_greedy, output_token, output_token_greedy, item2vec)
             
-            # Calculate consecutive similarity loss on diverse recommendations
-            consec_loss = self.consecutive_similarity_loss(output_token, item2vec)
+            # Calculate consecutive similarity loss on diverse recommendations (if enabled)
+            if self.use_consec:
+                consec_loss = self.consecutive_similarity_loss(output_token, item2vec)
 
         # Calculate contrastive (NCE) loss if SSL is enabled
         if self.ssl == 'us_x':

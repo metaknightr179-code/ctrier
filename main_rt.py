@@ -183,7 +183,7 @@ if __name__ == '__main__':
         if torch.cuda.is_available():
             model.cuda()
         model.eval()
-        next_epoch = 1
+        next_epoch = args.start_epoch if args.start_epoch > 1 else 1
         if resume:
             with open(save_path + 'valid_result.txt', 'r') as f:
                 content = f.readlines()
@@ -193,7 +193,13 @@ if __name__ == '__main__':
         while epoch <= epochs:
             step = 0
             total_result = []
-            model.load_state_dict(torch.load(save_path + 'model/duorec-' + str(epoch) + '.pth', map_location=args.device))
+            # Skip if checkpoint missing
+            ckpt_path = save_path + 'model/duorec-' + str(epoch) + '.pth'
+            if not os.path.exists(ckpt_path):
+                print(f'Skipping epoch {epoch}: checkpoint not found at {ckpt_path}', flush=True)
+                epoch += args.epoch_step
+                continue
+            model.load_state_dict(torch.load(ckpt_path, map_location=args.device))
             with torch.no_grad():
                 for batch in dataloader:
                     step += 1
@@ -219,7 +225,7 @@ if __name__ == '__main__':
             with open(save_path + 'valid_result_' + str(epoch) + '.txt', 'w') as f:
                 for result in total_result:
                     f.write(str(result) + '\n')
-            epoch += 1
+            epoch += args.epoch_step
         fw.close()
 
     if mode == "test":
@@ -233,7 +239,7 @@ if __name__ == '__main__':
         if torch.cuda.is_available():
             model.cuda()
         model.eval()
-        next_epoch = 1
+        next_epoch = args.start_epoch if args.start_epoch > 1 else 1
         if resume:
             with open(save_path + 'test_result.txt', 'r') as f:
                 content = f.readlines()
@@ -245,7 +251,13 @@ if __name__ == '__main__':
             # time.sleep(17)
             step = 0
             total_result = []
-            model.load_state_dict(torch.load(save_path + 'model/duorec-' + str(epoch) + '.pth', map_location=args.device)) # , map_location=torch.device('cpu')
+            # Skip if checkpoint missing
+            ckpt_path = save_path + 'model/duorec-' + str(epoch) + '.pth'
+            if not os.path.exists(ckpt_path):
+                print(f'Skipping epoch {epoch}: checkpoint not found at {ckpt_path}', flush=True)
+                epoch += args.epoch_step
+                continue
+            model.load_state_dict(torch.load(ckpt_path, map_location=args.device)) # , map_location=torch.device('cpu')
             with torch.no_grad():
                 for batch in dataloader:
                     step += 1
@@ -270,5 +282,5 @@ if __name__ == '__main__':
             with open(save_path + 'test_result_' + str(epoch) + '.txt', 'w') as f:
                 for result in total_result:
                     f.write(str(result) + '\n')
-            epoch += 1
+            epoch += args.epoch_step
         fw.close()

@@ -401,22 +401,27 @@ if __name__ == '__main__':
         # Set model to evaluation mode
         model.eval()
         
-        # Determine starting epoch
-        next_epoch = 1
+        # Determine starting epoch (use -start_epoch if not resuming)
+        next_epoch = args.start_epoch if args.start_epoch > 1 else 1
         if resume:
             with open(save_path + str(mode) + '_result.txt', 'r') as f:
                 content = f.readlines()
             next_epoch = len(content) + 1
             print(str(mode) + ' from epoch %d' % (next_epoch,))
         
-        # Evaluation loop over epochs
+        # Evaluation loop over epochs (with configurable step)
         epoch = next_epoch
         while epoch <= epochs:
             step = 0
             total_result = []  # Store evaluation results for this epoch
 
-            # Load model checkpoint for current epoch
-            model.load_state_dict(torch.load(save_path + 'model/duorec-' + str(epoch) + '.pth', map_location=args.device))
+            # Load model checkpoint for current epoch (skip if missing)
+            ckpt_path = save_path + 'model/duorec-' + str(epoch) + '.pth'
+            if not os.path.exists(ckpt_path):
+                print(f'Skipping epoch {epoch}: checkpoint not found at {ckpt_path}', flush=True)
+                epoch += args.epoch_step
+                continue
+            model.load_state_dict(torch.load(ckpt_path, map_location=args.device))
             
             # Disable gradient computation (faster inference)
             with torch.no_grad():
@@ -463,7 +468,7 @@ if __name__ == '__main__':
                 for result in total_result:
                     f.write(str(result) + '\n')
             
-            epoch += 1
+            epoch += args.epoch_step
         
         fw.close()
         
@@ -506,15 +511,15 @@ if __name__ == '__main__':
         # Set model to evaluation mode
         model.eval()
         
-        # Determine starting epoch
-        next_epoch = 1
+        # Determine starting epoch (use -start_epoch if not resuming)
+        next_epoch = args.start_epoch if args.start_epoch > 1 else 1
         if resume:
             with open(save_path + str(mode) + '_result.txt', 'r') as f:
                 content = f.readlines()
             next_epoch = len(content) + 1
             print(str(mode) + ' from epoch %d' % (next_epoch,))
         
-        # Evaluation loop over epochs
+        # Evaluation loop over epochs (with configurable step)
         epoch = next_epoch
         while epoch <= epochs:
             step = 0
@@ -522,8 +527,13 @@ if __name__ == '__main__':
             total_length = []      # Store sequence lengths (for interval analysis)
             total_rec_set = [set(), set(), set()]  # Store recommended items (for coverage)
 
-            # Load model checkpoint
-            model.load_state_dict(torch.load(save_path + 'model/duorec-' + str(epoch) + '.pth', map_location=args.device))
+            # Load model checkpoint (skip if missing)
+            ckpt_path = save_path + 'model/duorec-' + str(epoch) + '.pth'
+            if not os.path.exists(ckpt_path):
+                print(f'Skipping epoch {epoch}: checkpoint not found at {ckpt_path}', flush=True)
+                epoch += args.epoch_step
+                continue
+            model.load_state_dict(torch.load(ckpt_path, map_location=args.device))
             
             # Disable gradient computation
             with torch.no_grad():
@@ -569,6 +579,6 @@ if __name__ == '__main__':
                 for result in total_result:
                     f.write(str(result) + '\n')
             
-            epoch += 1
+            epoch += args.epoch_step
         
         fw.close()

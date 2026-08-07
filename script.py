@@ -65,6 +65,9 @@ def get_args():
     parser.add_argument('-early_stop', action='store_true', help='启用早停机制，当loss收敛时自动停止')
     parser.add_argument('-patience', type=int, default=30, help='早停耐心值：连续N个epoch无改善则停止')
     parser.add_argument('-min_delta', type=float, default=0.0001, help='早停最小改善幅度')
+    parser.add_argument('-no_consec', action='store_true', help='禁用consecutive similarity loss（保留overall diversity loss）')
+    parser.add_argument('-start_epoch', type=int, default=1, help='评测时起始epoch（用于只评测部分epoch）')
+    parser.add_argument('-epoch_step', type=int, default=1, help='评测时epoch步长（如设为10则每10个epoch评测一次）')
 
     args = parser.parse_args()
 
@@ -197,9 +200,10 @@ def evaluate_function_with_full(positives, output_token,
         gen_list = output_token[i].cpu().numpy() #% 12103
         # gen_list = torch.add(output_token[i], 1).cpu().numpy()%12103
         # print(item2vec.shape, gen_list.shape)
-        result[i]['ILD@5'] = cal_ILD(item2vec[gen_list[:5]], 5)
-        result[i]['ILD@10'] = cal_ILD(item2vec[gen_list[:10]], 10)
-        result[i]['ILD@20'] = cal_ILD(item2vec[gen_list[:20]], 20)
+        if item2vec is not None:
+            result[i]['ILD@5'] = cal_ILD(item2vec[gen_list[:5]], 5)
+            result[i]['ILD@10'] = cal_ILD(item2vec[gen_list[:10]], 10)
+            result[i]['ILD@20'] = cal_ILD(item2vec[gen_list[:20]], 20)
         # ILD = torch.sum(torch.cdist(item2vec1[torch.tensor(pred_list1)],
         #                              item2vec1[torch.tensor(pred_list1)])) / (topk * (topk - 1))
         # 针对每个user计算平均coverage
