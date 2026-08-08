@@ -216,10 +216,19 @@ def evaluate_function_with_full(positives, output_token,
             result[i]["CC@20"] = coverage_for_user(c, cat_map, cat_num)
     return result
 
-from sklearn.metrics.pairwise import pairwise_distances
+def _pairwise_euclidean(x):
+    """Pure-numpy replacement for sklearn's pairwise_distances(..., metric='euclidean')."""
+    x = np.asarray(x)
+    n = x.shape[0]
+    # |a - b|^2 = |a|^2 + |b|^2 - 2 a·b
+    sq = np.sum(x * x, axis=1, keepdims=True)           # [n, 1]
+    d2 = sq + sq.T - 2.0 * (x @ x.T)                     # [n, n]
+    d2 = np.clip(d2, 0.0, None)                          # numerical safety
+    return np.sqrt(d2)
+
 def cal_ILD(gen_vector, topk):
-    d = pairwise_distances(gen_vector.numpy(), metric='euclidean')
-    ILD =  np.sum(d)/(topk * (topk-1))
+    d = _pairwise_euclidean(gen_vector.numpy())
+    ILD = np.sum(d) / (topk * (topk - 1))
     return ILD
 
 
