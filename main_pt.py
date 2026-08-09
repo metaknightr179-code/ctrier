@@ -70,6 +70,11 @@ def get_metric(epoch, total_result):
     total_result_dict['ILD@10'] = get_metrics_full('ILD@10', total_result)
     total_result_dict['ILD@20'] = get_metrics_full('ILD@20', total_result)
 
+    # Calculate consecutive similarity (CS)
+    total_result_dict['CS@5'] = get_metrics_full('CS@5', total_result)
+    total_result_dict['CS@10'] = get_metrics_full('CS@10', total_result)
+    total_result_dict['CS@20'] = get_metrics_full('CS@20', total_result)
+
     return total_result_dict
 
 
@@ -133,6 +138,11 @@ def metric_all(epoch, total_result, total_rec_set=None, cate_map=None, num_cat=N
     total_result_dict['ILD@5'] = get_metrics_full('ILD@5', total_result)
     total_result_dict['ILD@10'] = get_metrics_full('ILD@10', total_result)
     total_result_dict['ILD@20'] = get_metrics_full('ILD@20', total_result)
+
+    # Calculate consecutive similarity (CS) - lower = more diverse adjacent items
+    total_result_dict['CS@5'] = get_metrics_full('CS@5', total_result)
+    total_result_dict['CS@10'] = get_metrics_full('CS@10', total_result)
+    total_result_dict['CS@20'] = get_metrics_full('CS@20', total_result)
     
     # Calculate coverage metrics if rec sets are provided
     if total_rec_set is not None:
@@ -189,13 +199,21 @@ if __name__ == '__main__':
     # --------------------------
     # SUBSECTION 3.2: LOAD AUXILIARY DATA
     # --------------------------
-    # Load pre-trained item embeddings (for ILD calculation)
-    try:
-        item2vec = np.load("./Yelp/yelp_vec.npy")
-        item2vec = torch.tensor(item2vec)
-    except:
-        print("Warning: yelp_vec.npy not found, using random embeddings")
-        item2vec = torch.randn(item_num, hidden_unit)
+    # Load pre-trained item embeddings (for ILD and CS calculation)
+    # Try multiple paths: Yelp, Kuairec, or fall back to model's own embeddings
+    item2vec = None
+    for vec_path in ["./Yelp/yelp_vec.npy", "./KuaiRec/kuairec_vec.npy", "./kuairec_vec.npy"]:
+        try:
+            item2vec = np.load(vec_path)
+            item2vec = torch.tensor(item2vec)
+            print(f"Loaded item embeddings from {vec_path}")
+            break
+        except:
+            continue
+    if item2vec is None:
+        print("Warning: No pre-trained item embeddings found (yelp_vec.npy / kuairec_vec.npy).")
+        print("  Will use model's own item_embedding.weight for ILD/CS metrics after model is loaded.")
+        item2vec = None  # Will be set to model embeddings after model init
     
     # Load category mapping (for coverage metrics)
     try:
@@ -392,14 +410,21 @@ if __name__ == '__main__':
         
         # Create PT model instance
         model = TRIER_PT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args)
-        
+
         # Move models to GPU if available
         if torch.cuda.is_available():
             model.cuda()
             rt_model.cuda()
-        
+
         # Set model to evaluation mode
         model.eval()
+
+        # If no external item2vec, use model's own item embeddings for ILD/CS
+        if item2vec is None:
+            item2vec = model.item_embedding.weight.detach().cpu()
+            if torch.cuda.is_available():
+                item2vec = item2vec.cuda()
+            print(f"Using model's item_embedding.weight ({item2vec.shape}) for ILD/CS metrics")
         
         # Determine starting epoch (use -start_epoch if not resuming)
         next_epoch = args.start_epoch if args.start_epoch > 1 else 1
@@ -502,14 +527,21 @@ if __name__ == '__main__':
         
         # Create PT model instance
         model = TRIER_PT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args)
-        
+
         # Move models to GPU if available
         if torch.cuda.is_available():
             model.cuda()
             rt_model.cuda()
-        
+
         # Set model to evaluation mode
         model.eval()
+
+        # If no external item2vec, use model's own item embeddings for ILD/CS
+        if item2vec is None:
+            item2vec = model.item_embedding.weight.detach().cpu()
+            if torch.cuda.is_available():
+                item2vec = item2vec.cuda()
+            print(f"Using model's item_embedding.weight ({item2vec.shape}) for ILD/CS metrics")
         
         # Determine starting epoch (use -start_epoch if not resuming)
         next_epoch = args.start_epoch if args.start_epoch > 1 else 1

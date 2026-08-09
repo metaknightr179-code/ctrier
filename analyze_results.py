@@ -198,21 +198,28 @@ def compare_variants(base_dir):
                     f"{metric_val(best_valid, 'ndcg@10_f'):.4f}",
                     f"{metric_val(best_valid, 'ndcg@20_f'):.4f}",
                     f"{metric_val(best_valid, 'mrr@10_f'):.4f}",
+                    f"{metric_val(best_valid, 'ILD@10'):.4f}",
+                    f"{metric_val(best_valid, 'CS@10'):.4f}",
+                    f"{metric_val(best_valid, 'CC@10'):.4f}",
                 ]
                 if best_test:
                     row.extend([
                         f"{metric_val(best_test, 'recall@10_f'):.4f}",
                         f"{metric_val(best_test, 'ndcg@10_f'):.4f}",
+                        f"{metric_val(best_test, 'ILD@10'):.4f}",
+                        f"{metric_val(best_test, 'CS@10'):.4f}",
+                        f"{metric_val(best_test, 'CC@10'):.4f}",
                     ])
                 else:
-                    row.extend(['N/A', 'N/A'])
+                    row.extend(['N/A', 'N/A', 'N/A', 'N/A', 'N/A'])
                 comparison.append(row)
 
     if comparison:
         headers = [
             "Variant", "Model", "Best Ep",
             "V_R@5", "V_R@10", "V_R@20", "V_N@10", "V_N@20", "V_M@10",
-            "T_R@10", "T_N@10"
+            "V_ILD@10", "V_CS@10", "V_CC@10",
+            "T_R@10", "T_N@10", "T_ILD@10", "T_CS@10", "T_CC@10"
         ]
         print_table(headers, comparison)
     else:

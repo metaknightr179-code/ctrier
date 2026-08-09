@@ -58,6 +58,11 @@ def metric_all(epoch, total_result):
     total_result_dict['ndcg@10_f'] = get_metrics_full('ndcg@10_f', total_result)
     total_result_dict['ndcg@20_f'] = get_metrics_full('ndcg@20_f', total_result)
 
+    # Consecutive Similarity (CS)
+    total_result_dict['CS@5'] = get_metrics_full('CS@5', total_result)
+    total_result_dict['CS@10'] = get_metrics_full('CS@10', total_result)
+    total_result_dict['CS@20'] = get_metrics_full('CS@20', total_result)
+
     # 旧命名的别名，保持向后兼容
     total_result_dict['recall@5'] = total_result_dict['recall@5_f']
     total_result_dict['recall@10'] = total_result_dict['recall@10_f']

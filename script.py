@@ -204,6 +204,17 @@ def evaluate_function_with_full(positives, output_token,
             result[i]['ILD@5'] = cal_ILD(item2vec[gen_list[:5]], 5)
             result[i]['ILD@10'] = cal_ILD(item2vec[gen_list[:10]], 10)
             result[i]['ILD@20'] = cal_ILD(item2vec[gen_list[:20]], 20)
+            # Consecutive Similarity (CS): avg cosine similarity between adjacent items in top-k
+            for k in [5, 10, 20]:
+                rec_k = gen_list[:k]
+                if len(rec_k) >= 2:
+                    vecs = item2vec[rec_k]
+                    v1 = vecs[:-1]
+                    v2 = vecs[1:]
+                    cos_sim = torch.nn.functional.cosine_similarity(v1, v2, dim=-1)
+                    result[i][f'CS@{k}'] = cos_sim.mean().item()
+                else:
+                    result[i][f'CS@{k}'] = 0.0
         # ILD = torch.sum(torch.cdist(item2vec1[torch.tensor(pred_list1)],
         #                              item2vec1[torch.tensor(pred_list1)])) / (topk * (topk - 1))
         # 针对每个user计算平均coverage
