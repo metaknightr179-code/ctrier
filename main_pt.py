@@ -143,12 +143,11 @@ def metric_all(epoch, total_result, total_rec_set=None, cate_map=None, num_cat=N
     total_result_dict['CS@5'] = get_metrics_full('CS@5', total_result)
     total_result_dict['CS@10'] = get_metrics_full('CS@10', total_result)
     total_result_dict['CS@20'] = get_metrics_full('CS@20', total_result)
-    
-    # Calculate coverage metrics if rec sets are provided
-    if total_rec_set is not None:
-        total_result_dict['CC@5'] = get_coverage('CC@5', total_rec_set, cate_map, num_cat)
-        total_result_dict['CC@10'] = get_coverage('CC@10', total_rec_set, cate_map, num_cat)
-        total_result_dict['CC@20'] = get_coverage('CC@20', total_rec_set, cate_map, num_cat)
+
+    # Calculate category coverage (CC) - aggregate per-user values
+    total_result_dict['CC@5'] = get_metrics_full('CC@5', total_result)
+    total_result_dict['CC@10'] = get_metrics_full('CC@10', total_result)
+    total_result_dict['CC@20'] = get_metrics_full('CC@20', total_result)
 
     return total_result_dict
 

@@ -63,6 +63,16 @@ def metric_all(epoch, total_result):
     total_result_dict['CS@10'] = get_metrics_full('CS@10', total_result)
     total_result_dict['CS@20'] = get_metrics_full('CS@20', total_result)
 
+    # ILD (Intra-List Diversity)
+    total_result_dict['ILD@5'] = get_metrics_full('ILD@5', total_result)
+    total_result_dict['ILD@10'] = get_metrics_full('ILD@10', total_result)
+    total_result_dict['ILD@20'] = get_metrics_full('ILD@20', total_result)
+
+    # CC (Category Coverage)
+    total_result_dict['CC@5'] = get_metrics_full('CC@5', total_result)
+    total_result_dict['CC@10'] = get_metrics_full('CC@10', total_result)
+    total_result_dict['CC@20'] = get_metrics_full('CC@20', total_result)
+
     # 旧命名的别名，保持向后兼容
     total_result_dict['recall@5'] = total_result_dict['recall@5_f']
     total_result_dict['recall@10'] = total_result_dict['recall@10_f']
@@ -208,6 +218,13 @@ if __name__ == '__main__':
         if torch.cuda.is_available():
             model.cuda()
         model.eval()
+
+        # Set up item2vec for ILD/CS metrics
+        item2vec = model.item_embedding.weight.detach()
+        if torch.cuda.is_available():
+            item2vec = item2vec.cuda()
+        print(f"Using model's item_embedding.weight ({item2vec.shape}) for ILD/CS metrics")
+
         next_epoch = args.start_epoch if args.start_epoch > 1 else 1
         if resume:
             with open(save_path + 'valid_result.txt', 'r') as f:
@@ -238,9 +255,7 @@ if __name__ == '__main__':
                     _, output_token = output.log_softmax(-1).topk(k=20, axis=-1)
                     # result = evaluate_function(output, targets, negatives)
                     # print(output_token.shape)
-                    result = evaluate_function_with_full(targets, output_token, cat_map=cate_map, cat_num=num_cat)
-                    # result = evaluate_function_with_full(output, targets, negatives, output_token)
-
+                    result = evaluate_function_with_full(targets, output_token, cat_map=cate_map, cat_num=num_cat, item2vec=item2vec)
                     total_result.extend(result)
             # print("step 1 done!")
             total_result_dict = metric_all(epoch, total_result)
@@ -264,6 +279,13 @@ if __name__ == '__main__':
         if torch.cuda.is_available():
             model.cuda()
         model.eval()
+
+        # Set up item2vec for ILD/CS metrics
+        item2vec = model.item_embedding.weight.detach()
+        if torch.cuda.is_available():
+            item2vec = item2vec.cuda()
+        print(f"Using model's item_embedding.weight ({item2vec.shape}) for ILD/CS metrics")
+
         next_epoch = args.start_epoch if args.start_epoch > 1 else 1
         if resume:
             with open(save_path + 'test_result.txt', 'r') as f:
@@ -295,7 +317,7 @@ if __name__ == '__main__':
                     output = torch.matmul(output, model.item_embedding.weight.T)  # [batch_size, item_num]
                     _, output_token = output.log_softmax(-1).topk(k=20, axis=-1)
                     # 使用与valid一致的全集评测（_f后缀键），保证metric_all键匹配
-                    result = evaluate_function_with_full(targets, output_token, cat_map=cate_map, cat_num=num_cat)
+                    result = evaluate_function_with_full(targets, output_token, cat_map=cate_map, cat_num=num_cat, item2vec=item2vec)
                     total_result.extend(result)
 
             total_result_dict = metric_all(epoch, total_result)
