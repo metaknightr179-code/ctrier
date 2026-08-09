@@ -201,14 +201,21 @@ def evaluate_function_with_full(positives, output_token,
         # gen_list = torch.add(output_token[i], 1).cpu().numpy()%12103
         # print(item2vec.shape, gen_list.shape)
         if item2vec is not None:
-            result[i]['ILD@5'] = cal_ILD(item2vec[gen_list[:5]], 5)
-            result[i]['ILD@10'] = cal_ILD(item2vec[gen_list[:10]], 10)
-            result[i]['ILD@20'] = cal_ILD(item2vec[gen_list[:20]], 20)
+            # Ensure gen_list indices are a proper tensor for indexing
+            if isinstance(gen_list, np.ndarray):
+                idx_tensor = torch.tensor(gen_list, dtype=torch.long)
+            else:
+                idx_tensor = gen_list
+            # Move indices to same device as item2vec
+            if hasattr(item2vec, 'device'):
+                idx_tensor = idx_tensor.to(item2vec.device)
+            result[i]['ILD@5'] = cal_ILD(item2vec[idx_tensor[:5]], 5)
+            result[i]['ILD@10'] = cal_ILD(item2vec[idx_tensor[:10]], 10)
+            result[i]['ILD@20'] = cal_ILD(item2vec[idx_tensor[:20]], 20)
             # Consecutive Similarity (CS): avg cosine similarity between adjacent items in top-k
             for k in [5, 10, 20]:
-                rec_k = gen_list[:k]
-                if len(rec_k) >= 2:
-                    vecs = item2vec[rec_k]
+                if k >= 2:
+                    vecs = item2vec[idx_tensor[:k]]
                     v1 = vecs[:-1]
                     v2 = vecs[1:]
                     cos_sim = torch.nn.functional.cosine_similarity(v1, v2, dim=-1)
@@ -238,6 +245,9 @@ def _pairwise_euclidean(x):
     return np.sqrt(d2)
 
 def cal_ILD(gen_vector, topk):
+    # Handle both CPU and GPU tensors
+    if hasattr(gen_vector, 'cpu'):
+        gen_vector = gen_vector.cpu()
     d = _pairwise_euclidean(gen_vector.numpy())
     ILD = np.sum(d) / (topk * (topk - 1))
     return ILD
