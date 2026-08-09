@@ -42,7 +42,9 @@ def parse_result_file(filepath):
             # Try to parse as dict (valid/test results)
             if line.startswith('{'):
                 try:
-                    d = ast.literal_eval(line)
+                    # Strip numpy type wrappers: np.float64(x) -> x, np.float32(x) -> x
+                    clean = re.sub(r'np\.float\d+\(([^)]+)\)', r'\1', line)
+                    d = ast.literal_eval(clean)
                     results.append(d)
                 except:
                     pass

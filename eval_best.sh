@@ -57,14 +57,15 @@ for VAR in "${VARIANTS[@]}"; do
             return
         fi
         python3 -c "
-import ast, sys
+import ast, sys, re
 best_ep, best_r5 = 0, -1
 with open('$valid_file') as f:
     for line in f:
         line = line.strip()
         if not line.startswith('{'): continue
         try:
-            d = ast.literal_eval(line)
+            clean = re.sub(r'np\.float\d+\(([^)]+)\)', r'\1', line)
+            d = ast.literal_eval(clean)
         except Exception:
             continue
         r5 = d.get('recall@5_f', d.get('recall@5', -1))
