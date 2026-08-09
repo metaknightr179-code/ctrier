@@ -104,6 +104,15 @@ if __name__ == '__main__':
     item_num = args.n
     max_seqs_len = args.ml
     modified_max_seqs_len = args.mml
+    cate_file = args.cat
+    num_cat = args.n_cat
+
+    # Load category mapping (for coverage metrics)
+    try:
+        cate_map = get_cates_map(cate_file)
+    except:
+        print("Warning: cate_file not found: " + cate_file)
+        cate_map = None
 
     init_seeds()
     if mode == 'train':
@@ -229,7 +238,7 @@ if __name__ == '__main__':
                     _, output_token = output.log_softmax(-1).topk(k=20, axis=-1)
                     # result = evaluate_function(output, targets, negatives)
                     # print(output_token.shape)
-                    result = evaluate_function_with_full(targets, output_token)
+                    result = evaluate_function_with_full(targets, output_token, cat_map=cate_map, cat_num=num_cat)
                     # result = evaluate_function_with_full(output, targets, negatives, output_token)
 
                     total_result.extend(result)
@@ -286,7 +295,7 @@ if __name__ == '__main__':
                     output = torch.matmul(output, model.item_embedding.weight.T)  # [batch_size, item_num]
                     _, output_token = output.log_softmax(-1).topk(k=20, axis=-1)
                     # 使用与valid一致的全集评测（_f后缀键），保证metric_all键匹配
-                    result = evaluate_function_with_full(targets, output_token)
+                    result = evaluate_function_with_full(targets, output_token, cat_map=cate_map, cat_num=num_cat)
                     total_result.extend(result)
 
             total_result_dict = metric_all(epoch, total_result)

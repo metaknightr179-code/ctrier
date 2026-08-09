@@ -100,9 +100,10 @@ def get_coverage_set(total_rec_set, rec_list):
 def coverage_for_user(u_set, cat_map, cat_num):
     cc = set()
     for item in u_set:
-        for cat in cat_map[item]:
-            cc.add(cat)
-    return len(cc)/cat_num
+        if item in cat_map:
+            for cat in cat_map[item]:
+                cc.add(cat)
+    return len(cc)/cat_num if cat_num > 0 else 0.0
 
 
 def ILD_tensor(token_list, item2vec):

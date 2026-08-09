@@ -477,7 +477,7 @@ if __name__ == '__main__':
                         _, rec_list = output.log_softmax(-1).topk(k=20, axis=-1)
                     
                     # Evaluate recommendations (compute all metrics)
-                    result = evaluate_function_with_full(targets, rec_list, item2vec=item2vec)
+                    result = evaluate_function_with_full(targets, rec_list, cat_map=cate_map, cat_num=num_cat, item2vec=item2vec)
                     total_result.extend(result)
 
             # Calculate aggregate metrics
@@ -594,7 +594,7 @@ if __name__ == '__main__':
                         pass
                     
                     # Evaluate and accumulate results
-                    result = evaluate_function_with_full(targets, rec_list, item2vec=item2vec)
+                    result = evaluate_function_with_full(targets, rec_list, cat_map=cate_map, cat_num=num_cat, item2vec=item2vec)
                     total_rec_set = get_coverage_set(total_rec_set, rec_list)
                     total_result.extend(result)
                     total_length.extend(item_seq_len)
