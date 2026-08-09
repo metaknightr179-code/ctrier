@@ -57,14 +57,26 @@ def parse_result_file(filepath):
     return results if results else None
 
 
+def metric_val(d, key, default=0.0):
+    """Read a metric from dict, trying both _f-suffixed and unsuffixed keys."""
+    if d is None:
+        return default
+    v = d.get(key)
+    if v is None and key.endswith('_f'):
+        v = d.get(key[:-2])
+    if v is None and not key.endswith('_f'):
+        v = d.get(key + '_f')
+    return default if v is None else v
+
+
 def find_best_epoch(valid_results, metric='recall@5_f'):
-    """Find the epoch with the best validation metric."""
+    """Find the epoch with the best validation metric (tries both _f and unsuffixed keys)."""
     if not valid_results:
         return None, None
     best_val = -1
     best_epoch = None
     for r in valid_results:
-        val = r.get(metric, -1)
+        val = metric_val(r, metric, -1)
         if val > best_val:
             best_val = val
             best_epoch = r.get('epoch')
@@ -104,12 +116,17 @@ def analyze_variant(variant, base_dir):
         if train_results:
             epochs_trained = len(train_results)
             last_epoch = train_results[-1].get('epoch', epochs_trained)
-            last_loss = train_results[-1].get('loss', 'N/A')
+            last_loss = train_results[-1].get('loss', None)
             # Find best (lowest) train loss
-            best_train = min(train_results, key=lambda x: x.get('loss', float('inf')))
+            valid_losses = [r for r in train_results if r.get('loss') is not None]
             print(f"  Training: {epochs_trained} epochs completed (last epoch {last_epoch})")
-            print(f"  Final train loss: {last_loss:.4f}")
-            print(f"  Best train loss: {best_train['loss']:.4f} at epoch {best_train['epoch']}")
+            if last_loss is not None:
+                print(f"  Final train loss: {last_loss:.4f}")
+            else:
+                print(f"  Final train loss: N/A (train_result.txt format: {list(train_results[-1].keys())[:5]}...)")
+            if valid_losses:
+                best_train = min(valid_losses, key=lambda x: x.get('loss', float('inf')))
+                print(f"  Best train loss: {best_train['loss']:.4f} at epoch {best_train['epoch']}")
 
         # Parse validation results
         valid_results = parse_result_file(os.path.join(save_dir, 'valid_result.txt'))
@@ -175,17 +192,17 @@ def compare_variants(base_dir):
                     variant.replace('kuairec_', ''),
                     label,
                     best_epoch,
-                    f"{best_valid.get('recall@5_f', 0):.4f}",
-                    f"{best_valid.get('recall@10_f', 0):.4f}",
-                    f"{best_valid.get('recall@20_f', 0):.4f}",
-                    f"{best_valid.get('ndcg@10_f', 0):.4f}",
-                    f"{best_valid.get('ndcg@20_f', 0):.4f}",
-                    f"{best_valid.get('mrr@10_f', 0):.4f}",
+                    f"{metric_val(best_valid, 'recall@5_f'):.4f}",
+                    f"{metric_val(best_valid, 'recall@10_f'):.4f}",
+                    f"{metric_val(best_valid, 'recall@20_f'):.4f}",
+                    f"{metric_val(best_valid, 'ndcg@10_f'):.4f}",
+                    f"{metric_val(best_valid, 'ndcg@20_f'):.4f}",
+                    f"{metric_val(best_valid, 'mrr@10_f'):.4f}",
                 ]
                 if best_test:
                     row.extend([
-                        f"{best_test.get('recall@10_f', 0):.4f}",
-                        f"{best_test.get('ndcg@10_f', 0):.4f}",
+                        f"{metric_val(best_test, 'recall@10_f'):.4f}",
+                        f"{metric_val(best_test, 'ndcg@10_f'):.4f}",
                     ])
                 else:
                     row.extend(['N/A', 'N/A'])

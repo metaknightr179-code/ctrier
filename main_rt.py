@@ -47,16 +47,27 @@ from script import *
     # return total_result_dict
 def metric_all(epoch, total_result):
     total_result_dict = {'epoch': epoch}
-    # 采样集
-    total_result_dict['recall@5'] = get_metrics('recall@5', total_result)
-    total_result_dict['recall@10'] = get_metrics('recall@10', total_result)
-    total_result_dict['recall@20'] = get_metrics('recall@20', total_result)
-    total_result_dict['mrr@5'] = get_metrics('mrr@5', total_result)
-    total_result_dict['mrr@10'] = get_metrics('mrr@10', total_result)
-    total_result_dict['mrr@20'] = get_metrics('mrr@20', total_result)
-    total_result_dict['ndcg@5'] = get_metrics('ndcg@5', total_result)
-    total_result_dict['ndcg@10'] = get_metrics('ndcg@10', total_result)
-    total_result_dict['ndcg@20'] = get_metrics('ndcg@20', total_result)
+    # 全集指标（与evaluate_function_with_full输出的_f后缀键匹配）
+    total_result_dict['recall@5_f'] = get_metrics_full('recall@5_f', total_result)
+    total_result_dict['recall@10_f'] = get_metrics_full('recall@10_f', total_result)
+    total_result_dict['recall@20_f'] = get_metrics_full('recall@20_f', total_result)
+    total_result_dict['mrr@5_f'] = get_metrics_full('mrr@5_f', total_result)
+    total_result_dict['mrr@10_f'] = get_metrics_full('mrr@10_f', total_result)
+    total_result_dict['mrr@20_f'] = get_metrics_full('mrr@20_f', total_result)
+    total_result_dict['ndcg@5_f'] = get_metrics_full('ndcg@5_f', total_result)
+    total_result_dict['ndcg@10_f'] = get_metrics_full('ndcg@10_f', total_result)
+    total_result_dict['ndcg@20_f'] = get_metrics_full('ndcg@20_f', total_result)
+
+    # 旧命名的别名，保持向后兼容
+    total_result_dict['recall@5'] = total_result_dict['recall@5_f']
+    total_result_dict['recall@10'] = total_result_dict['recall@10_f']
+    total_result_dict['recall@20'] = total_result_dict['recall@20_f']
+    total_result_dict['mrr@5'] = total_result_dict['mrr@5_f']
+    total_result_dict['mrr@10'] = total_result_dict['mrr@10_f']
+    total_result_dict['mrr@20'] = total_result_dict['mrr@20_f']
+    total_result_dict['ndcg@5'] = total_result_dict['ndcg@5_f']
+    total_result_dict['ndcg@10'] = total_result_dict['ndcg@10_f']
+    total_result_dict['ndcg@20'] = total_result_dict['ndcg@20_f']
 
     total_result_dict['sum'] = total_result_dict['recall@5'] + total_result_dict['recall@10'] + \
                                total_result_dict['recall@20'] + total_result_dict['mrr@5'] + \
@@ -268,13 +279,10 @@ if __name__ == '__main__':
                         negatives = negatives.cuda()
                     output = model.test_forward(input_session_ids)  # [batch_size, hidden_unit]
                     output = torch.matmul(output, model.item_embedding.weight.T)  # [batch_size, item_num]
-                    result = evaluate_function(output, targets, negatives)
-                    # _, output_token = output.log_softmax(-1).topk(k=20, axis=-1)
-                    # result = evaluate_function_with_full(output, targets, negatives, output_token)
-                    # print(result)
-                    # break
+                    _, output_token = output.log_softmax(-1).topk(k=20, axis=-1)
+                    # 使用与valid一致的全集评测（_f后缀键），保证metric_all键匹配
+                    result = evaluate_function_with_full(targets, output_token)
                     total_result.extend(result)
-                    # break
 
             total_result_dict = metric_all(epoch, total_result)
             print(total_result_dict)

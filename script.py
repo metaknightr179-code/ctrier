@@ -264,83 +264,25 @@ def get_coverage(metrics_name, total_set, cat_map, CAT_NUM):
     # return 0
 
 def get_metrics_full(metrics_name, total_result):
-    if metrics_name == 'recall@5_f':
-        recall5 = 0.0
-        for i in total_result:
-            recall5 += i['recall@5_f']
-        return recall5 / len(total_result)
-    elif metrics_name == 'mrr@5_f':
-        mrr5 = 0.0
-        for i in total_result:
-            mrr5 += i['mrr@5_f']
-        return mrr5 / len(total_result)
-    elif metrics_name == 'ndcg@5_f':
-        ndcg5 = 0.0
-        for i in total_result:
-            ndcg5 += i['ndcg@5_f']
-        return ndcg5 / len(total_result)
-    elif metrics_name == 'recall@10_f':
-        recall10 = 0.0
-        for i in total_result:
-            recall10 += i['recall@10_f']
-        return recall10 / len(total_result)
-    elif metrics_name == 'mrr@10_f':
-        mrr10 = 0.0
-        for i in total_result:
-            mrr10 += i['mrr@10_f']
-        return mrr10 / len(total_result)
-    elif metrics_name == 'ndcg@10_f':
-        ndcg10 = 0.0
-        for i in total_result:
-            ndcg10 += i['ndcg@10_f']
-        return ndcg10 / len(total_result)
-    elif metrics_name == 'recall@20_f':
-        recall20 = 0.0
-        for i in total_result:
-            recall20 += i['recall@20_f']
-        return recall20 / len(total_result)
-    elif metrics_name == 'mrr@20_f':
-        mrr20 = 0.0
-        for i in total_result:
-            mrr20 += i['mrr@20_f']
-        return mrr20 / len(total_result)
-    elif metrics_name == 'ndcg@20_f':
-        ndcg20 = 0.0
-        for i in total_result:
-            ndcg20 += i['ndcg@20_f']
-        return ndcg20 / len(total_result)
-    elif metrics_name == "ILD@5":
-        ILD5 = 0.0
-        for i in total_result:
-            ILD5 += i['ILD@5']
-        return ILD5 / len(total_result)
-    elif metrics_name == "ILD@10":
-        ILD10 = 0.0
-        for i in total_result:
-            ILD10 += i['ILD@10']
-        return ILD10 / len(total_result)
-    elif metrics_name == "ILD@20":
-        ILD20 = 0.0
-        for i in total_result:
-            ILD20 += i['ILD@20']
-        return ILD20 / len(total_result)
-    elif metrics_name == "CC@5":
-        CC5 = 0.0
-        for i in total_result:
-            CC5 += i['CC@5']
-        return CC5 / len(total_result)
-    elif metrics_name == "CC@10":
-        CC10 = 0.0
-        for i in total_result:
-            CC10 += i['CC@10']
-        return CC10 / len(total_result)
-    elif metrics_name == "CC@20":
-        CC20 = 0.0
-        for i in total_result:
-            CC20 += i['CC@20']
-        return CC20 / len(total_result)
-    else:
-        raise Exception("参数错误")
+    if not total_result:
+        return 0.0
+    key = metrics_name
+    total = 0.0
+    count = 0
+    for i in total_result:
+        val = i.get(key, None)
+        # Fallback: for _f keys, try without _f; for non-_f keys, try with _f
+        if val is None and key.endswith('_f'):
+            val = i.get(key[:-2], None)
+        if val is None and not key.endswith('_f'):
+            val = i.get(key + '_f', None)
+        if val is None:
+            continue
+        total += val
+        count += 1
+    if count == 0:
+        return 0.0
+    return total / count
 
 
 
