@@ -302,7 +302,14 @@ if __name__ == '__main__':
         
         # Set model to training mode
         model.train()
-        
+
+        # If no external item2vec, use model's own item embeddings for diversity loss
+        if item2vec is None:
+            item2vec = model.item_embedding.weight.detach()
+            if torch.cuda.is_available():
+                item2vec = item2vec.cuda()
+            print(f"Using model's item_embedding.weight ({item2vec.shape}) for diversity loss during training")
+
         # Create optimizer (Adam)
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
         
