@@ -44,7 +44,7 @@ class SASRecModel(nn.Module):
         seq_emb = self.ln(seq_emb)
         seq_emb = self.dropout(seq_emb)
         
-        mask = nn.TransformerEncoderLayer.generate_square_subsequent_mask(seq_len).to(input_seq.device)
+        mask = torch.triu(torch.full((seq_len, seq_len), float('-inf'), device=input_seq.device), diagonal=1)
         
         for attention_layer in self.attention_layers:
             seq_emb = attention_layer(seq_emb, mask)

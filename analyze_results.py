@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
 """
-Analyze TRIER RT/PT training results from all Kuairec variants.
-Reads train_result.txt, valid_result.txt, test_result.txt from each save directory
-and produces a comparative summary.
-
-Usage:
-    python3 analyze_results.py [--base_dir .]
+Analyze results from all TRIER variants and baselines.
+Reads test_result.txt and valid_result.txt from each save directory.
+Generates a comparison table.
 """
-import argparse
 import os
-import re
+import sys
+import glob
+import json
 import ast
-from collections import defaultdict
-
 
 VARIANTS = [
     "kuairec_highest_individual",
@@ -21,230 +17,186 @@ VARIANTS = [
     "kuairec_first_average",
 ]
 
-# Directories to analyze: (label, prefix)
-DIRS = [
-    ("RT", "save_rt_"),
-    ("PT (with consec)", "save_pt_"),
-    ("PT (no consec)", "save_pt_no_consec_"),
+# Model directories to check: (label, path_pattern)
+MODEL_DIRS = [
+    ("RT",              "./save_rt_{var}"),
+    ("PT (lamb=0.1)",   "./save_pt_{var}"),
+    ("PT (no consec)",  "./save_pt_no_consec_{var}"),
+    ("PT (lamb=0.01)",  "./save_pt_lamb001_{var}"),
+    ("PT (lamb=0)",     "./save_pt_lamb0_{var}"),
+]
+
+# Baseline results (if available)
+BASELINE_DIRS = [
+    ("GRU4Rec",  "./baseline_results_kuairec_first_average/gru4rec_results.txt"),
+    ("SASRec",   "./baseline_results_kuairec_first_average/sasrec_results.txt"),
+    ("BERT4Rec", "./baseline_results_kuairec_first_average/bert4rec_results.txt"),
 ]
 
 
 def parse_result_file(filepath):
-    """Parse a result file where each line is either 'epoch X loss Y' or a dict string."""
+    """Parse a result txt file into a dict of metrics.
+    Result files contain one Python dict literal per line (one per epoch).
+    We take the last (most recent) line."""
     if not os.path.exists(filepath):
         return None
-    results = []
-    with open(filepath, 'r') as f:
-        for line in f:
+    try:
+        with open(filepath, 'r') as f:
+            lines = f.readlines()
+        if not lines:
+            return None
+        # Try each line from bottom up — last valid dict is the latest epoch
+        for line in reversed(lines):
             line = line.strip()
             if not line:
                 continue
-            # Try to parse as dict (valid/test results)
-            if line.startswith('{'):
-                try:
-                    # Strip numpy type wrappers: np.float64(x) -> x, np.float32(x) -> x
-                    clean = re.sub(r'np\.float\d+\(([^)]+)\)', r'\1', line)
-                    d = ast.literal_eval(clean)
-                    results.append(d)
-                except:
-                    pass
-            else:
-                # Parse 'epoch X loss Y' format (train results)
-                m = re.match(r'epoch\s+(\d+)\s+loss\s+([\d.]+)', line)
-                if m:
-                    results.append({
-                        'epoch': int(m.group(1)),
-                        'loss': float(m.group(2)),
-                    })
-    return results if results else None
+            # Skip log/info lines
+            if line.startswith('Loading') or line.startswith('Warning') or line.startswith('Using') or line.startswith('Best'):
+                continue
+            # Try Python dict literal (main format from main_pt.py / main_rt.py)
+            try:
+                d = ast.literal_eval(line)
+                if isinstance(d, dict):
+                    return d
+            except:
+                pass
+            # Try JSON
+            try:
+                d = json.loads(line)
+                if isinstance(d, dict):
+                    return d
+            except:
+                pass
+        # Fallback: try line-by-line key: value format (baselines)
+        result = {}
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith('epoch') or line.startswith('Loading') or line.startswith('Warning') or line.startswith('Using'):
+                continue
+            for sep in [': ', '= ']:
+                if sep in line:
+                    parts = line.split(sep, 1)
+                    if len(parts) == 2:
+                        key = parts[0].strip()
+                        val_str = parts[1].strip()
+                        try:
+                            val = float(val_str)
+                            result[key] = val
+                        except ValueError:
+                            pass
+                        break
+        return result if result else None
+    except Exception as e:
+        print(f"  Error parsing {filepath}: {e}")
+        return None
 
 
-def metric_val(d, key, default=0.0):
-    """Read a metric from dict, trying both _f-suffixed and unsuffixed keys."""
+def metric_val(d, key):
+    """Get metric value, trying with and without _f suffix."""
     if d is None:
-        return default
-    v = d.get(key)
-    if v is None and key.endswith('_f'):
-        v = d.get(key[:-2])
-    if v is None and not key.endswith('_f'):
-        v = d.get(key + '_f')
-    return default if v is None else v
+        return 0.0
+    if key in d:
+        val = d[key]
+        return float(val) if val is not None else 0.0
+    suffixed = f"{key}_f"
+    if suffixed in d:
+        val = d[suffixed]
+        return float(val) if val is not None else 0.0
+    return 0.0
 
 
-def find_best_epoch(valid_results, metric='recall@5_f'):
-    """Find the epoch with the best validation metric (tries both _f and unsuffixed keys)."""
-    if not valid_results:
-        return None, None
-    best_val = -1
-    best_epoch = None
-    for r in valid_results:
-        val = metric_val(r, metric, -1)
-        if val > best_val:
-            best_val = val
-            best_epoch = r.get('epoch')
-    return best_epoch, best_val
-
-
-def print_table(headers, rows):
-    """Print a formatted table."""
-    if not rows:
-        return
-    col_widths = [max(len(str(h)), max(len(str(r[i])) for r in rows)) for i, h in enumerate(headers)]
-    # Print header
-    header_line = " | ".join(str(h).ljust(w) for h, w in zip(headers, col_widths))
-    print(header_line)
-    print("-+-".join("-" * w for w in col_widths))
-    # Print rows
-    for row in rows:
-        print(" | ".join(str(c).ljust(w) for c, w in zip(row, col_widths)))
-
-
-def analyze_variant(variant, base_dir):
-    """Analyze all model types for a given variant."""
-    print(f"\n{'='*70}")
-    print(f"VARIANT: {variant}")
-    print(f"{'='*70}")
-
-    for label, prefix in DIRS:
-        save_dir = os.path.join(base_dir, f"{prefix}{variant}")
-        if not os.path.exists(save_dir):
-            print(f"\n[{label}] Directory not found: {save_dir} — skipping")
-            continue
-
-        print(f"\n--- {label} ({prefix}{variant}) ---")
-
-        # Parse train results
-        train_results = parse_result_file(os.path.join(save_dir, 'train_result.txt'))
-        if train_results:
-            epochs_trained = len(train_results)
-            last_epoch = train_results[-1].get('epoch', epochs_trained)
-            last_loss = train_results[-1].get('loss', None)
-            # Find best (lowest) train loss
-            valid_losses = [r for r in train_results if r.get('loss') is not None]
-            print(f"  Training: {epochs_trained} epochs completed (last epoch {last_epoch})")
-            if last_loss is not None:
-                print(f"  Final train loss: {last_loss:.4f}")
-            else:
-                print(f"  Final train loss: N/A (train_result.txt format: {list(train_results[-1].keys())[:5]}...)")
-            if valid_losses:
-                best_train = min(valid_losses, key=lambda x: x.get('loss', float('inf')))
-                print(f"  Best train loss: {best_train['loss']:.4f} at epoch {best_train['epoch']}")
-
-        # Parse validation results
-        valid_results = parse_result_file(os.path.join(save_dir, 'valid_result.txt'))
-        if valid_results:
-            best_epoch, best_val = find_best_epoch(valid_results, 'recall@5_f')
-            print(f"  Validation: {len(valid_results)} epochs evaluated")
-            print(f"  Best Recall@5: {best_val:.4f} at epoch {best_epoch}")
-
-            # Print best epoch's full metrics
-            best_valid_dict = next((r for r in valid_results if r.get('epoch') == best_epoch), None)
-            if best_valid_dict:
-                print(f"  Best epoch validation metrics:")
-                for k, v in sorted(best_valid_dict.items()):
-                    if k != 'epoch':
-                        print(f"    {k}: {v:.4f}")
-
-        # Parse test results
-        test_results = parse_result_file(os.path.join(save_dir, 'test_result.txt'))
-        if test_results:
-            # If we have validation, use the best val epoch's test result
-            if valid_results and best_epoch:
-                best_test = next((r for r in test_results if r.get('epoch') == best_epoch), None)
-                if best_test:
-                    print(f"  Test metrics (at best val epoch {best_epoch}):")
-                    for k, v in sorted(best_test.items()):
-                        if k != 'epoch':
-                            print(f"    {k}: {v:.4f}")
-            else:
-                # Otherwise show the last test result
-                last_test = test_results[-1]
-                print(f"  Test metrics (last epoch {last_test.get('epoch')}):")
-                for k, v in sorted(last_test.items()):
-                    if k != 'epoch':
-                        print(f"    {k}: {v:.4f}")
-
-
-def compare_variants(base_dir):
-    """Create a comparison table across all variants and model types."""
-    print(f"\n{'='*70}")
-    print("COMPARISON SUMMARY")
-    print(f"{'='*70}")
-
-    # Collect best metrics for each (variant, model_type)
-    comparison = []
-    for variant in VARIANTS:
-        for label, prefix in DIRS:
-            save_dir = os.path.join(base_dir, f"{prefix}{variant}")
-            if not os.path.exists(save_dir):
-                continue
-
-            valid_results = parse_result_file(os.path.join(save_dir, 'valid_result.txt'))
-            test_results = parse_result_file(os.path.join(save_dir, 'test_result.txt'))
-
-            if not valid_results:
-                continue
-
-            best_epoch, best_r5 = find_best_epoch(valid_results, 'recall@5_f')
-            best_valid = next((r for r in valid_results if r.get('epoch') == best_epoch), None)
-            best_test = next((r for r in test_results if r.get('epoch') == best_epoch), None) if test_results else None
-
-            if best_valid:
-                row = [
-                    variant.replace('kuairec_', ''),
-                    label,
-                    best_epoch,
-                    f"{metric_val(best_valid, 'recall@5_f'):.4f}",
-                    f"{metric_val(best_valid, 'recall@10_f'):.4f}",
-                    f"{metric_val(best_valid, 'recall@20_f'):.4f}",
-                    f"{metric_val(best_valid, 'ndcg@10_f'):.4f}",
-                    f"{metric_val(best_valid, 'ndcg@20_f'):.4f}",
-                    f"{metric_val(best_valid, 'mrr@10_f'):.4f}",
-                    f"{metric_val(best_valid, 'ILD@10'):.4f}",
-                    f"{metric_val(best_valid, 'CS@10'):.4f}",
-                    f"{metric_val(best_valid, 'CC@10'):.4f}",
-                ]
-                if best_test:
-                    row.extend([
-                        f"{metric_val(best_test, 'recall@10_f'):.4f}",
-                        f"{metric_val(best_test, 'ndcg@10_f'):.4f}",
-                        f"{metric_val(best_test, 'ILD@10'):.4f}",
-                        f"{metric_val(best_test, 'CS@10'):.4f}",
-                        f"{metric_val(best_test, 'CC@10'):.4f}",
-                    ])
-                else:
-                    row.extend(['N/A', 'N/A', 'N/A', 'N/A', 'N/A'])
-                comparison.append(row)
-
-    if comparison:
-        headers = [
-            "Variant", "Model", "Best Ep",
-            "V_R@5", "V_R@10", "V_R@20", "V_N@10", "V_N@20", "V_M@10",
-            "V_ILD@10", "V_CS@10", "V_CC@10",
-            "T_R@10", "T_N@10", "T_ILD@10", "T_CS@10", "T_CC@10"
-        ]
-        print_table(headers, comparison)
-    else:
-        print("No validation results found in any directory.")
+def get_latest_epoch(save_dir):
+    """Find the latest checkpoint epoch number."""
+    model_dir = os.path.join(save_dir, "model")
+    if not os.path.exists(model_dir):
+        return "?"
+    ckpts = glob.glob(os.path.join(model_dir, "duorec-*.pth"))
+    if not ckpts:
+        return "?"
+    epochs = []
+    for f in ckpts:
+        try:
+            ep = int(f.split("duorec-")[1].split(".pth")[0])
+            epochs.append(ep)
+        except:
+            pass
+    return str(max(epochs)) if epochs else "?"
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Analyze TRIER training results')
-    parser.add_argument('--base_dir', default='.', help='Base directory containing save_* folders')
-    args = parser.parse_args()
+    print("=" * 120)
+    print("COMPARISON SUMMARY")
+    print("=" * 120)
 
-    print(f"Analyzing results in: {os.path.abspath(args.base_dir)}")
-    print(f"Variants: {', '.join(VARIANTS)}")
-    print(f"Model types: {', '.join(label for label, _ in DIRS)}")
+    # Header
+    header = f"{'Variant':<20} | {'Model':<18} | {'Best Ep':<7} | {'V_R@5':<8} {'V_R@10':<8} {'V_R@20':<8} {'V_N@10':<8} {'V_N@20':<8} {'V_M@10':<8} {'V_ILD@10':<9} {'V_CS@10':<8} {'V_CC@10':<8} | {'T_R@10':<8} {'T_N@10':<8} {'T_ILD@10':<9} {'T_CS@10':<8} {'T_CC@10':<8}"
+    print(header)
+    print("-" * 120)
 
-    for variant in VARIANTS:
-        analyze_variant(variant, args.base_dir)
+    for var in VARIANTS:
+        for label, path_pattern in MODEL_DIRS:
+            save_dir = path_pattern.replace("{var}", var)
+            if not os.path.exists(save_dir):
+                continue
 
-    compare_variants(args.base_dir)
+            # Parse test and valid results
+            test_file = os.path.join(save_dir, "test_result.txt")
+            valid_file = os.path.join(save_dir, "valid_result.txt")
+            test_data = parse_result_file(test_file)
+            valid_data = parse_result_file(valid_file)
 
-    print(f"\n{'='*70}")
+            if test_data is None and valid_data is None:
+                continue
+
+            best_ep = get_latest_epoch(save_dir)
+
+            # Validation metrics
+            v_r5  = metric_val(valid_data, "recall@5")
+            v_r10 = metric_val(valid_data, "recall@10")
+            v_r20 = metric_val(valid_data, "recall@20")
+            v_n10 = metric_val(valid_data, "ndcg@10")
+            v_n20 = metric_val(valid_data, "ndcg@20")
+            v_m10 = metric_val(valid_data, "mrr@10")
+            v_ild10 = metric_val(valid_data, "ILD@10")
+            v_cs10  = metric_val(valid_data, "CS@10")
+            v_cc10  = metric_val(valid_data, "CC@10")
+
+            # Test metrics
+            t_r10 = metric_val(test_data, "recall@10")
+            t_n10 = metric_val(test_data, "ndcg@10")
+            t_ild10 = metric_val(test_data, "ILD@10")
+            t_cs10  = metric_val(test_data, "CS@10")
+            t_cc10  = metric_val(test_data, "CC@10")
+
+            row = f"{var:<20} | {label:<18} | {best_ep:<7} | {v_r5:<8.4f} {v_r10:<8.4f} {v_r20:<8.4f} {v_n10:<8.4f} {v_n20:<8.4f} {v_m10:<8.4f} {v_ild10:<9.4f} {v_cs10:<8.4f} {v_cc10:<8.4f} | {t_r10:<8.4f} {t_n10:<8.4f} {t_ild10:<9.4f} {t_cs10:<8.4f} {t_cc10:<8.4f}"
+            print(row)
+
+    # Baselines (only first_average)
+    print("-" * 120)
+    print("Baselines (first_average):")
+    print("-" * 120)
+    for label, path in BASELINE_DIRS:
+        if not os.path.exists(path):
+            continue
+        data = parse_result_file(path)
+        if data is None:
+            continue
+        r5  = metric_val(data, "Recall@5")
+        r10 = metric_val(data, "Recall@10")
+        r20 = metric_val(data, "Recall@20")
+        n5  = metric_val(data, "NDCG@5")
+        n10 = metric_val(data, "NDCG@10")
+        n20 = metric_val(data, "NDCG@20")
+        m5  = metric_val(data, "MRR@5")
+        m10 = metric_val(data, "MRR@10")
+        m20 = metric_val(data, "MRR@20")
+        print(f"{'first_average':<20} | {label:<18} | {'500':<7} | {r5:<8.4f} {r10:<8.4f} {r20:<8.4f} {n10:<8.4f} {n20:<8.4f} {m10:<8.4f} {'N/A':<9} {'N/A':<8} {'N/A':<8} | {r10:<8.4f} {n10:<8.4f} {'N/A':<9} {'N/A':<8} {'N/A':<8}")
+
+    print("=" * 120)
     print("Analysis complete.")
-    print(f"{'='*70}")
+    print("=" * 120)
 
 
 if __name__ == '__main__':

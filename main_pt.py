@@ -206,7 +206,7 @@ if __name__ == '__main__':
     # Load pre-trained item embeddings (for ILD and CS calculation)
     # Try multiple paths: Yelp, Kuairec, or fall back to model's own embeddings
     item2vec = None
-    for vec_path in ["./Yelp/yelp_vec.npy", "./KuaiRec/kuairec_vec.npy", "./kuairec_vec.npy"]:
+    for vec_path in ["./Yelp/yelp_vec.npy", "./KuaiRec/kuairec_vec.npy", "./kuairec_vec.npy", "./KuaiRec_variants/kuairec_vec.npy"]:
         try:
             item2vec = np.load(vec_path)
             item2vec = torch.tensor(item2vec)
@@ -379,6 +379,13 @@ if __name__ == '__main__':
             
             # Save model checkpoint after each epoch
             torch.save(model.state_dict(), save_path + 'model/duorec-' + str(epoch) + '.pth')
+
+            # Keep only the latest 2 checkpoints to save disk space
+            import glob as _glob
+            ckpts = sorted(_glob.glob(save_path + 'model/duorec-*.pth'),
+                           key=lambda f: int(f.split('duorec-')[1].split('.pth')[0]))
+            while len(ckpts) > 2:
+                os.remove(ckpts.pop(0))
             
             # Log epoch summary
             print('epoch %d loss %0.4f time %d' % (epoch, avg_loss, time.time() - start_time), flush=True)

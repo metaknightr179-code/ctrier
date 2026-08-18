@@ -185,6 +185,13 @@ if __name__ == '__main__':
             
             avg_loss = acc_loss.item() / step
             torch.save(model.state_dict(), save_path + 'model/duorec-' + str(epoch) + '.pth')
+
+            # Keep only the latest 2 checkpoints to save disk space
+            import glob as _glob
+            ckpts = sorted(_glob.glob(save_path + 'model/duorec-*.pth'),
+                           key=lambda f: int(f.split('duorec-')[1].split('.pth')[0]))
+            while len(ckpts) > 2:
+                os.remove(ckpts.pop(0))
             print('epoch %d loss %0.4f time %d' % (
             epoch, avg_loss, time.time() - start_time), flush=True)
             fw.write('epoch %d loss %0.4f' % (epoch, avg_loss) + '\n')
@@ -220,10 +227,20 @@ if __name__ == '__main__':
         model.eval()
 
         # Set up item2vec for ILD/CS metrics
-        item2vec = model.item_embedding.weight.detach()
+        item2vec = None
+        for vec_path in ["./Yelp/yelp_vec.npy", "./KuaiRec/kuairec_vec.npy", "./kuairec_vec.npy", "./KuaiRec_variants/kuairec_vec.npy"]:
+            try:
+                item2vec = np.load(vec_path)
+                item2vec = torch.tensor(item2vec)
+                print(f"Loaded item embeddings from {vec_path}")
+                break
+            except:
+                continue
+        if item2vec is None:
+            item2vec = model.item_embedding.weight.detach()
+            print(f"Using model's item_embedding.weight ({item2vec.shape}) for ILD/CS metrics")
         if torch.cuda.is_available():
             item2vec = item2vec.cuda()
-        print(f"Using model's item_embedding.weight ({item2vec.shape}) for ILD/CS metrics")
 
         next_epoch = args.start_epoch if args.start_epoch > 1 else 1
         if resume:
@@ -281,10 +298,20 @@ if __name__ == '__main__':
         model.eval()
 
         # Set up item2vec for ILD/CS metrics
-        item2vec = model.item_embedding.weight.detach()
+        item2vec = None
+        for vec_path in ["./Yelp/yelp_vec.npy", "./KuaiRec/kuairec_vec.npy", "./kuairec_vec.npy", "./KuaiRec_variants/kuairec_vec.npy"]:
+            try:
+                item2vec = np.load(vec_path)
+                item2vec = torch.tensor(item2vec)
+                print(f"Loaded item embeddings from {vec_path}")
+                break
+            except:
+                continue
+        if item2vec is None:
+            item2vec = model.item_embedding.weight.detach()
+            print(f"Using model's item_embedding.weight ({item2vec.shape}) for ILD/CS metrics")
         if torch.cuda.is_available():
             item2vec = item2vec.cuda()
-        print(f"Using model's item_embedding.weight ({item2vec.shape}) for ILD/CS metrics")
 
         next_epoch = args.start_epoch if args.start_epoch > 1 else 1
         if resume:

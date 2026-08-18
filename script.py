@@ -111,9 +111,6 @@ def ILD_tensor(token_list, item2vec):
     topk = token_list.shape[1]
     gen_vector = item2vec[token_list]
 
-    # L2-normalize embeddings so distances are in [0, 2] range (like cosine dist)
-    gen_vector = torch.nn.functional.normalize(gen_vector, p=2, dim=-1)
-
     # B X N x N
     ILD_list = torch.cdist(gen_vector, gen_vector)/(topk*(topk - 1))
     return ILD_list.sum(-1).sum(-1)  # B
@@ -234,26 +231,13 @@ def evaluate_function_with_full(positives, output_token,
             result[i]["CC@20"] = coverage_for_user(c, cat_map, cat_num)
     return result
 
-def _pairwise_euclidean(x):
-    """Pure-numpy replacement for sklearn's pairwise_distances(..., metric='euclidean')."""
-    x = np.asarray(x)
-    n = x.shape[0]
-    # |a - b|^2 = |a|^2 + |b|^2 - 2 a·b
-    sq = np.sum(x * x, axis=1, keepdims=True)           # [n, 1]
-    d2 = sq + sq.T - 2.0 * (x @ x.T)                     # [n, n]
-    d2 = np.clip(d2, 0.0, None)                          # numerical safety
-    return np.sqrt(d2)
-
 def cal_ILD(gen_vector, topk):
+    from sklearn.metrics.pairwise import pairwise_distances
     # Handle both CPU and GPU tensors
     if hasattr(gen_vector, 'cpu'):
         gen_vector = gen_vector.cpu()
     v = gen_vector.numpy()
-    # L2-normalize so distances are in [0, 2] range (consistent with paper)
-    norms = np.linalg.norm(v, axis=1, keepdims=True)
-    norms[norms == 0] = 1.0
-    v = v / norms
-    d = _pairwise_euclidean(v)
+    d = pairwise_distances(v, metric='euclidean')
     ILD = np.sum(d) / (topk * (topk - 1))
     return ILD
 

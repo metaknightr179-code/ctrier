@@ -1,0 +1,36 @@
+\subsection{Implementation Details}
+
+\subsubsection{Dataset}
+We conducted experiments on the Kuairec dataset~\cite{kuairec}, a large-scale real-world video recommendation dataset. The dataset contains 10,728 unique items across 31 semantic categories. Following standard sequential recommendation protocols, we constructed four dataset variants based on different item selection strategies for the training/validation/test split: \emph{highest\_individual}, \emph{highest\_average}, \emph{first\_individual}, and \emph{first\_average}. For each variant, we adopted the leave-one-out evaluation protocol~\cite{cao2018,sun2018,vaswani2017}: the last item in each user's interaction sequence was designated as the test item, the second-to-last item for validation, and the remaining items for training. All sequences were truncated to a maximum length of 50 items.
+
+\subsubsection{Evaluation Protocol}
+To ensure consistent and unbiased comparison, we evaluated all models on the \emph{entire item set} without sampled ranking. This full-ranking evaluation avoids the inconsistencies introduced by sampled metrics~\cite{chen2021}. We report performance metrics at $k \in \{5, 10, 20\}$: Recall@$k$, NDCG@$k$, MRR@$k$, Inverse List Diversity (ILD)~\cite{zhang2022}, Consecutive Similarity (CS), and Category Coverage (CC)~\cite{zhou2018}. ILD is computed using raw Euclidean distances between L2-normalized item embeddings following the standard formulation~\cite{zhang2022}. CC measures the fraction of item categories covered by the top-$k$ recommendation list. CS quantifies the average cosine similarity between adjacent items in the generated sequence.
+
+\subsubsection{TRIER Configuration}
+The TRIER model consists of two components: the Reverse Trajectory (RT) model and the Forward Recommendation (PT) model. Both components share the same transformer-based architecture built with PyTorch. We initialized all parameters using Xavier uniform initialization. The embedding size and hidden dimensions were set to 64. The transformer encoder comprised 2 layers with 2 attention heads. A dropout rate of 0.5 was applied to both the embedding matrix and the transformer module for regularization.
+
+For optimization, we used the Adam optimizer~\cite{kingma2015} with a learning rate of $5 \times 10^{-4}$ and batch size of 16. Models were trained for up to 500 epochs with early stopping on the validation set (patience of 50 epochs, minimum improvement of $1 \times 10^{-4}$). The RT model was trained first to convergence, and the trained RT checkpoint was then used to initialize the PT model's left-side augmentation module.
+
+The diversity weight $\lambda$ controlling the trade-off between relevance and diversity was set to 0.1 following~\cite{zhang2022}. The consecutive similarity loss weight was set to 0.01 to prevent coverage collapse. The number of augmented items (beam width, $M$) was set to 3, and the number of left-side augmented items ($K$) was set to 5. We also trained an additional PT model variant without the consecutive similarity loss (denoted as PT-no-consec) to isolate the effect of each diversity component.
+
+\subsubsection{Baseline Configuration}
+We implemented three strong sequential recommendation baselines using PyTorch for fair comparison:
+
+\begin{itemize}
+    \item \textbf{GRU4Rec}~\cite{hidasi2016}: A recurrent neural network-based sequential recommender using GRU cells. We set the embedding dimension to 100, hidden dimension to 100, and trained for 500 epochs with batch size 64 and learning rate $1 \times 10^{-3}$.
+    
+    \item \textbf{SASRec}~\cite{kang2018}: Self-Attentive Sequential Recommendation using a causal transformer. We set the hidden size to 50, number of transformer layers to 2, number of attention heads to 1, dropout rate to 0.5, and trained for 500 epochs with batch size 64 and learning rate $1 \times 10^{-3}$.
+    
+    \item \textbf{BERT4Rec}~\cite{sun2019}: Bidirectional encoder representations from transformers for sequential recommendation using masked language modeling. We set the hidden size to 64, number of transformer layers to 2, number of attention heads to 2, dropout rate to 0.2, mask probability to 0.2, and trained for 500 epochs with batch size 64 and learning rate $1 \times 10^{-3}$.
+\end{itemize}
+
+All baselines were trained using the Adam optimizer with early stopping (patience of 50 epochs) and evaluated on the same test set using the full-ranking protocol described above. For diversity metrics (ILD, CS, CC), the baseline models' own item embedding weights were used as the item representation space, consistent with the TRIER evaluation protocol.
+
+\subsubsection{Ablation Studies}
+To disentangle the contributions of individual components, we conducted the following ablation experiments:
+\begin{itemize}
+    \item \textbf{PT without consecutive diversity loss}: Training the PT model with only the overall diversity loss enabled ($\lambda = 0.1$) and the consecutive similarity loss disabled. This variant tests whether the consecutive similarity constraint is necessary for maintaining recommendation quality while promoting diversity.
+    \item \textbf{PT with full diversity loss}: Training the PT model with both overall diversity loss ($\lambda = 0.1$) and consecutive similarity loss (weight $= 0.01$) enabled.
+    \item \textbf{RT model only}: Evaluating the RT model independently without the PT component, to assess the standalone quality of reverse trajectory modeling for next-item prediction.
+\end{itemize}
+\endparameter></function></seed:tool_call>
