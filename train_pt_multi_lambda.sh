@@ -17,7 +17,8 @@ VARIANTS=(
 LAMBAS=("0.005" "0.01" "0.05" "0.1")
 LAMB_SUFFIXES=("lamb0005" "lamb001" "lamb005" "lamb01")
 
-cd /root/ctrier
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}"
 
 GPU=0
 MAX_EPOCHS=500

@@ -7,7 +7,8 @@
 
 set -e
 
-cd /root/ctrier
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}"
 
 echo "=== DISK USAGE BEFORE CLEANUP ==="
 df -h | grep -E "File|/root|/$"

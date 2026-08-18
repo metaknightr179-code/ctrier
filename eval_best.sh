@@ -11,7 +11,8 @@ VARIANTS=(
     "kuairec_first_average"
 )
 
-cd /root/ctrier
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}"
 
 GPU=0
 

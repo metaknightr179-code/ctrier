@@ -40,6 +40,10 @@ KuaiRec_variants/
 data/
 datasets/
 
+# Baseline results and converted data (large files)
+baseline_results*/
+Baselines/
+
 # Logs
 *.log
 logs/
