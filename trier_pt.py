@@ -59,9 +59,8 @@ class TRIER_PT(nn.Module):
         self.args = args
         self.inf = torch.tensor([0.0], device=args.device)  # Used for masking
         
-        # Consecutive similarity loss weight
-        # Note: Use 0.01 (not 0.1) to avoid coverage collapse
-        self.lmd_consec = 0.01       # Lambda for consecutive similarity loss
+        # Consecutive similarity loss weight (configurable via -lmd_consec, default 0.01)
+        self.lmd_consec = getattr(args, 'lmd_consec', 0.01)
         # Respect -no_consec flag: disables consecutive similarity loss but keeps overall diversity loss
         self.use_consec = not getattr(args, 'no_consec', False)
         if not self.use_consec:

@@ -66,6 +66,7 @@ def get_args():
     parser.add_argument('-patience', type=int, default=30, help='早停耐心值：连续N个epoch无改善则停止')
     parser.add_argument('-min_delta', type=float, default=0.0001, help='早停最小改善幅度')
     parser.add_argument('-no_consec', action='store_true', help='禁用consecutive similarity loss（保留overall diversity loss）')
+    parser.add_argument('-lmd_consec', type=float, default=0.01, help='consecutive similarity loss权重（默认0.01）')
     parser.add_argument('-start_epoch', type=int, default=1, help='评测时起始epoch（用于只评测部分epoch）')
     parser.add_argument('-epoch_step', type=int, default=1, help='评测时epoch步长（如设为10则每10个epoch评测一次）')
 
