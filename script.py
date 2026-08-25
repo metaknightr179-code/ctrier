@@ -174,7 +174,7 @@ def evaluate_function_with_full(positives, output_token,
             if idx < 5 :
                 result[i]['recall@5_f'] = 1.0
                 result[i]['mrr@5_f'] = 1 / (idx + 1)
-                result[i]['ndcg@5_f'] = 1.0 / np.log2((idx + 1) + 2.0)
+                result[i]['ndcg@5_f'] = 1.0 / np.log2(idx + 2.0)
             else:
                 result[i]['recall@5_f'] = 0.0
                 result[i]['mrr@5_f'] = 0.0
@@ -182,7 +182,7 @@ def evaluate_function_with_full(positives, output_token,
             if idx < 10 :
                 result[i]['recall@10_f'] = 1.0
                 result[i]['mrr@10_f'] = 1 / (idx + 1)
-                result[i]['ndcg@10_f'] = 1.0 / np.log2((idx + 1) + 2.0)
+                result[i]['ndcg@10_f'] = 1.0 / np.log2(idx + 2.0)
             else:
                 result[i]['recall@10_f'] = 0.0
                 result[i]['mrr@10_f'] = 0.0
@@ -190,7 +190,7 @@ def evaluate_function_with_full(positives, output_token,
             if idx < 20:
                 result[i]['recall@20_f'] = 1.0
                 result[i]['mrr@20_f'] = 1 / (idx + 1)
-                result[i]['ndcg@20_f'] = 1.0 / np.log2((idx + 1) + 2.0)
+                result[i]['ndcg@20_f'] = 1.0 / np.log2(idx + 2.0)
             else:
                 result[i]['recall@20_f'] = 0.0
                 result[i]['mrr@20_f'] = 0.0
