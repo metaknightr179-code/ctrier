@@ -287,7 +287,7 @@ def evaluate_bert4rec(model, test_file, item_num, maxlen=50, device='cuda'):
 
 def main():
     parser = argparse.ArgumentParser(description='BERT4Rec baseline')
-    parser.add_argument('--train_file', required=True)
+    parser.add_argument('--train_file', required=False)
     parser.add_argument('--test_file', required=True)
     parser.add_argument('--item_num', type=int, required=True)
     parser.add_argument('--epochs', type=int, default=200)
@@ -324,6 +324,8 @@ def main():
         model.eval()
         train_time = 0.0
     else:
+        if not args.train_file:
+            parser.error('--train_file is required when not in eval_only mode')
         start_time = time.time()
         model = train_bert4rec(
             args.train_file, args.test_file, args.item_num,
