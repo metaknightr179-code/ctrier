@@ -73,6 +73,7 @@ for VAR in "${VARIANTS[@]}"; do
         --batch_size ${BATCH_SIZE} \
         --lr ${LR} \
         --maxlen ${MAXLEN} \
+        --ckpt_dir "./save_sasrec_${VAR}" \
         --output "${OUTPUT_DIR}/sasrec_results.txt" 2>&1 | tee "${OUTPUT_DIR}/sasrec.log"
     if [ $? -ne 0 ]; then
         echo "ERROR: SASRec failed for ${VAR}"
@@ -93,6 +94,7 @@ for VAR in "${VARIANTS[@]}"; do
         --batch_size ${BATCH_SIZE} \
         --lr ${LR} \
         --maxlen ${MAXLEN} \
+        --ckpt_dir "./save_bert4rec_${VAR}" \
         --output "${OUTPUT_DIR}/bert4rec_results.txt" 2>&1 | tee "${OUTPUT_DIR}/bert4rec.log"
     if [ $? -ne 0 ]; then
         echo "ERROR: BERT4Rec failed for ${VAR}"

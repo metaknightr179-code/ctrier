@@ -5,6 +5,7 @@ BERT4Rec: Sequential Recommendation with Bidirectional Encoder Representations f
 """
 import argparse
 import os
+import sys
 import time
 import random
 import numpy as np
@@ -137,7 +138,7 @@ def create_batches(inputs, batch_size):
 
 
 def train_bert4rec(train_file, test_file, item_num, epochs=500, batch_size=64,
-                   lr=0.001, maxlen=50, device='cuda'):
+                   lr=0.001, maxlen=50, device='cuda', ckpt_dir='.'):
     set_seed(42)
     print(f'Loading training data...')
     train_sequences = load_sequences(train_file)
@@ -161,9 +162,11 @@ def train_bert4rec(train_file, test_file, item_num, epochs=500, batch_size=64,
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=0.01)
     criterion = nn.CrossEntropyLoss(ignore_index=0)
 
+    os.makedirs(ckpt_dir, exist_ok=True)
+    ckpt_path = os.path.join(ckpt_dir, 'bert4rec_best.pth')
+
     best_loss = float('inf')
     best_epoch = 0
-    ckpt_path = 'bert4rec_best.pth'
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -292,18 +295,46 @@ def main():
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--maxlen', type=int, default=50)
     parser.add_argument('--output', default='bert4rec_results.txt')
+    parser.add_argument('--eval_only', action='store_true', help='Skip training, only evaluate saved checkpoint')
+    parser.add_argument('--ckpt_path', default='bert4rec_best.pth', help='Path to checkpoint file')
+    parser.add_argument('--ckpt_dir', default='.', help='Directory to save checkpoint')
     args = parser.parse_args()
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f'Using device: {device}')
 
-    start_time = time.time()
-    model = train_bert4rec(
-        args.train_file, args.test_file, args.item_num,
-        epochs=args.epochs, batch_size=args.batch_size,
-        lr=args.lr, maxlen=args.maxlen, device=device
-    )
-    train_time = time.time() - start_time
+    ckpt_dir = args.ckpt_dir if args.ckpt_dir else '.'
+    os.makedirs(ckpt_dir, exist_ok=True)
+    ckpt_path = os.path.join(ckpt_dir, args.ckpt_path)
+
+    if args.eval_only:
+        if not os.path.exists(ckpt_path):
+            print(f'ERROR: Checkpoint not found: {ckpt_path}')
+            sys.exit(1)
+        print(f'Eval-only mode: loading checkpoint from {ckpt_path}')
+        model = BERT4RecModel(
+            item_num=args.item_num,
+            hidden_units=64,
+            num_blocks=2,
+            num_heads=2,
+            dropout_rate=0.2,
+            maxlen=args.maxlen
+        ).to(device)
+        model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
+        model.eval()
+        train_time = 0.0
+    else:
+        start_time = time.time()
+        model = train_bert4rec(
+            args.train_file, args.test_file, args.item_num,
+            epochs=args.epochs, batch_size=args.batch_size,
+            lr=args.lr, maxlen=args.maxlen, device=device,
+            ckpt_dir=ckpt_dir
+        )
+        train_time = time.time() - start_time
+        # Save checkpoint to ckpt_dir
+        torch.save(model.state_dict(), ckpt_path)
+        print(f'Checkpoint saved to {ckpt_path}')
 
     results = evaluate_bert4rec(model, args.test_file, args.item_num,
                                 maxlen=args.maxlen, device=device)

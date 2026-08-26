@@ -192,6 +192,8 @@ def main():
     parser.add_argument('--vec', type=str, default=None, help='Item2vec .npy file')
     parser.add_argument('--output', default='gru4rec_results.txt')
     parser.add_argument('--ckpt_dir', default='./save_gru4rec')
+    parser.add_argument('--eval_only', action='store_true', help='Skip training, only evaluate saved checkpoint')
+    parser.add_argument('--ckpt_path', default=None, help='Path to checkpoint file for eval_only mode')
     args = parser.parse_args()
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -213,11 +215,23 @@ def main():
     if item2vec is not None and torch.cuda.is_available():
         item2vec = item2vec.to(device)
 
-    # Train
-    start_time = time.time()
-    model = train_gru4rec(args.train_file, args.item_num, args.epochs,
-                          args.batch_size, args.lr, args.maxlen, args.ckpt_dir, device)
-    train_time = time.time() - start_time
+    if args.eval_only:
+        # Eval-only mode: load checkpoint and evaluate
+        ckpt_path = args.ckpt_path or os.path.join(args.ckpt_dir, 'gru4rec_best.pth')
+        if not os.path.exists(ckpt_path):
+            print(f'ERROR: Checkpoint not found: {ckpt_path}')
+            sys.exit(1)
+        print(f'Eval-only mode: loading checkpoint from {ckpt_path}')
+        model = GRU4RecModel(args.item_num, embedding_dim=64, hidden_dim=64).to(device)
+        model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
+        model.eval()
+        train_time = 0.0
+    else:
+        # Train
+        start_time = time.time()
+        model = train_gru4rec(args.train_file, args.item_num, args.epochs,
+                              args.batch_size, args.lr, args.maxlen, args.ckpt_dir, device)
+        train_time = time.time() - start_time
 
     # Evaluate
     results = evaluate_gru4rec(model, args.test_file, args.item_num, args.maxlen,

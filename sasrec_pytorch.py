@@ -5,6 +5,7 @@ Self-Attentive Sequential Recommendation.
 """
 import argparse
 import os
+import sys
 import time
 import numpy as np
 import torch
@@ -85,7 +86,7 @@ def create_batches(sequences, batch_size, maxlen=50):
     return batches
 
 
-def train_sasrec(train_file, test_file, item_num, epochs=20, batch_size=64, lr=0.001, maxlen=50, device='cuda'):
+def train_sasrec(train_file, test_file, item_num, epochs=20, batch_size=64, lr=0.001, maxlen=50, device='cuda', ckpt_dir='.'):
     print(f'Loading training data...')
     train_sequences = load_sequences(train_file)
     print(f'Loaded {len(train_sequences)} valid sequences')
@@ -98,6 +99,9 @@ def train_sasrec(train_file, test_file, item_num, epochs=20, batch_size=64, lr=0
                         dropout_rate=0.5, maxlen=maxlen).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
+    
+    os.makedirs(ckpt_dir, exist_ok=True)
+    ckpt_path = os.path.join(ckpt_dir, 'sasrec_best.pth')
     
     best_loss = float('inf')
     best_epoch = 0
@@ -126,12 +130,12 @@ def train_sasrec(train_file, test_file, item_num, epochs=20, batch_size=64, lr=0
         if avg_loss < best_loss:
             best_loss = avg_loss
             best_epoch = epoch
-            torch.save(model.state_dict(), 'sasrec_best.pth')
+            torch.save(model.state_dict(), ckpt_path)
         
         print(f'Epoch {epoch}/{epochs}, Loss: {avg_loss:.4f}, Best: {best_loss:.4f} (ep {best_epoch})')
     
-    if os.path.exists('sasrec_best.pth'):
-        model.load_state_dict(torch.load('sasrec_best.pth', weights_only=True))
+    if os.path.exists(ckpt_path):
+        model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
     model.eval()
     
     return model
@@ -202,21 +206,43 @@ def main():
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--maxlen', type=int, default=50)
     parser.add_argument('--output', default='sasrec_results.txt')
+    parser.add_argument('--eval_only', action='store_true', help='Skip training, only evaluate saved checkpoint')
+    parser.add_argument('--ckpt_path', default='sasrec_best.pth', help='Path to checkpoint file')
+    parser.add_argument('--ckpt_dir', default='.', help='Directory to save checkpoint')
     args = parser.parse_args()
     
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f'Using device: {device}')
     
-    start_time = time.time()
-    model = train_sasrec(args.train_file, args.test_file, args.item_num,
-                        epochs=args.epochs, batch_size=args.batch_size, 
-                        lr=args.lr, maxlen=args.maxlen, device=device)
-    train_time = time.time() - start_time
+    ckpt_dir = args.ckpt_dir if args.ckpt_dir else '.'
+    os.makedirs(ckpt_dir, exist_ok=True)
+    ckpt_path = os.path.join(ckpt_dir, args.ckpt_path)
+    
+    if args.eval_only:
+        if not os.path.exists(ckpt_path):
+            print(f'ERROR: Checkpoint not found: {ckpt_path}')
+            sys.exit(1)
+        print(f'Eval-only mode: loading checkpoint from {ckpt_path}')
+        model = SASRecModel(args.item_num, hidden_units=50, num_blocks=2, num_heads=1, 
+                            dropout_rate=0.5, maxlen=args.maxlen).to(device)
+        model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
+        model.eval()
+        train_time = 0.0
+    else:
+        start_time = time.time()
+        model = train_sasrec(args.train_file, args.test_file, args.item_num,
+                            epochs=args.epochs, batch_size=args.batch_size, 
+                            lr=args.lr, maxlen=args.maxlen, device=device,
+                            ckpt_dir=ckpt_dir)
+        train_time = time.time() - start_time
+        # Save checkpoint to ckpt_dir
+        torch.save(model.state_dict(), ckpt_path)
+        print(f'Checkpoint saved to {ckpt_path}')
     
     results = evaluate_sasrec(model, args.test_file, args.item_num, maxlen=args.maxlen, device=device)
     
     print('\n' + '=' * 50)
-    print('SASRec Results on Kuairec first_average')
+    print(f'SASRec Results on {args.test_file}')
     print('=' * 50)
     for k in [5, 10, 20]:
         print(f'Recall@{k}: {results[f"recall@{k}"]:.4f}')
@@ -224,7 +250,7 @@ def main():
         print(f'NDCG@{k}:   {results[f"ndcg@{k}"]:.4f}')
     
     with open(args.output, 'w') as f:
-        f.write('SASRec Results on Kuairec first_average\n')
+        f.write(f'SASRec Results on {args.test_file}\n')
         f.write(f'Training time: {train_time:.1f}s\n\n')
         for k in [5, 10, 20]:
             f.write(f'Recall@{k}: {results[f"recall@{k}"]:.4f}\n')
