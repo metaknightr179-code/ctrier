@@ -29,7 +29,7 @@ from trier_rt import TRIER_RT           # Reverse trajectory model
 from dataset_duorec import TrainPTDataset, TestDataset  # Data loading classes
 from script import *                    # Utility functions (metrics, args parsing)
 from torch.utils.tensorboard import SummaryWriter  # TensorBoard logging
-writer = SummaryWriter('./tensorboard_log')
+writer = SummaryWriter('/tmp/zhangrui_tensorboard_log')
 
 
 # --------------------------
