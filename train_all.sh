@@ -86,16 +86,19 @@ for CONFIG in "${CONFIGS[@]}"; do
         echo "${LABEL} — ${VAR}"
         echo "=============================================="
 
-        # Verify RT checkpoint exists
-        CKPT="${RT_DIR}/model/duorec-500.pth"
-        if [ ! -f "$CKPT" ]; then
-            CKPT="${RT_DIR}/model/duorec-10.pth"
-            if [ ! -f "$CKPT" ]; then
-                echo "ERROR: Missing RT checkpoint for ${VAR}"
-                FAILED="${FAILED} ${SUFFIX}/${VAR}"
-                continue
-            fi
+        # Verify RT checkpoint exists (auto-detect latest)
+        CKPT=""
+        if ls ${RT_DIR}/model/duorec-*.pth 1>/dev/null 2>&1; then
+            CKPT=$(ls -1 ${RT_DIR}/model/duorec-*.pth 2>/dev/null \
+                   | sort -t'-' -k2 -n | tail -1)
         fi
+        if [ -z "$CKPT" ] || [ ! -f "$CKPT" ]; then
+            echo "ERROR: Missing RT checkpoint in ${RT_DIR}/model/"
+            echo "  Run train_rt_all.sh first. Skipping ${SUFFIX}/${VAR}"
+            FAILED="${FAILED} ${SUFFIX}/${VAR}"
+            continue
+        fi
+        echo "  Using RT checkpoint: ${CKPT}"
 
         # Check if training is complete or can resume
         PT_FLAGS=""
