@@ -119,7 +119,7 @@ for CONFIG in "${CONFIGS[@]}"; do
             -vn ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
             -en ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
             -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
-            -n 10728 -e 500 -b 64 -l 5e-4 \
+            -n 10728 -n_cat 31 -e 500 -b 64 -l 5e-4 \
             -div -lamb ${LAMB} -lmd_consec ${LMD_CONSEC} \
             -t_mode topk \
             -early_stop -patience 50 -min_delta 0.0001 \
