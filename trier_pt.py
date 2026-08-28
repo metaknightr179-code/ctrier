@@ -71,6 +71,16 @@ class TRIER_PT(nn.Module):
         # --------------------------
         # Item embedding layer (lookup table for item representations)
         self.item_embedding = nn.Embedding(self.n_items, self.hidden_size, padding_idx=0)
+
+        # Type embedding layer (RecFormer-style: learnable representation per item type/category)
+        # Each item's representation = ID embedding + mean(type embeddings for its categories)
+        # padding_idx=0 means items with no category get zero type embedding
+        self.n_types = getattr(args, 'n_cat', 31) + 1  # +1 for padding (0 = no type)
+        self.type_embedding = nn.Embedding(self.n_types, self.hidden_size, padding_idx=0)
+
+        # Buffer: maps item_id -> padded tensor of type/category IDs [n_items, max_types]
+        # Initialized to all zeros (no types); set via set_item_types() after model creation
+        self.register_buffer('item_type_ids', torch.zeros(self.n_items, 1, dtype=torch.long))
         
         # Position embedding layer (learnable positional encodings)
         self.position_embedding = nn.Embedding(100, self.hidden_size)
@@ -92,6 +102,51 @@ class TRIER_PT(nn.Module):
         self.mask = self.mask_correlated_samples(self.batch_size)  # Mask for NCE loss
         self.nce_fct = nn.CrossEntropyLoss(reduction='mean')      # NCE loss function
         self.KL_loss = nn.KLDivLoss()                             # KL divergence loss
+
+
+    # --------------------------
+    # METHOD: set_item_types
+    # Purpose: Load item-to-category mapping into model buffer
+    # Input: dict {item_id: [cat1, cat2, ...]} or None
+    # Called after model creation, before training/eval
+    # --------------------------
+    def set_item_types(self, cate_map):
+        if cate_map is None:
+            print("[TRIER_PT] No category mapping provided — type embeddings will be zero")
+            return
+        max_types = max(len(cats) for cats in cate_map.values()) if cate_map else 1
+        max_types = max(max_types, 1)
+        type_ids = torch.zeros(self.n_items, max_types, dtype=torch.long)
+        for item_id, cats in cate_map.items():
+            if 0 <= item_id < self.n_items:
+                for j, cat in enumerate(cats):
+                    if j < max_types:
+                        type_ids[item_id, j] = cat + 1  # +1 because 0 = padding
+        self.item_type_ids = type_ids.to(self.item_type_ids.device)
+        n_with_types = (type_ids.sum(dim=1) > 0).sum().item()
+        print(f"[TRIER_PT] Loaded type info: {n_with_types}/{self.n_items} items have types, max_types={max_types}")
+
+    # --------------------------
+    # METHOD: get_type_embeddings
+    # Purpose: Compute mean type embedding for given item IDs (masked)
+    # Input: item_ids [batch, seq_len] or [batch]
+    # Output: type_emb [batch, seq_len, hidden] or [batch, hidden]
+    # --------------------------
+    def get_type_embeddings(self, item_ids):
+        type_ids = self.item_type_ids[item_ids]  # [..., max_types]
+        type_emb = self.type_embedding(type_ids)  # [..., max_types, hidden]
+        mask = (type_ids > 0).float().unsqueeze(-1)  # [..., max_types, 1]
+        type_emb = (type_emb * mask).sum(dim=-2) / (mask.sum(dim=-2) + 1e-8)
+        return type_emb
+
+    # --------------------------
+    # METHOD: combined_item_weight
+    # Purpose: Return item weights with type info added (for scoring)
+    # Output: [n_items, hidden_size] = item_embedding.weight + type_emb
+    # --------------------------
+    def combined_item_weight(self):
+        type_emb = self.get_type_embeddings(torch.arange(self.n_items, device=self.item_type_ids.device))
+        return self.item_embedding.weight + type_emb
 
 
     # --------------------------
@@ -238,8 +293,8 @@ class TRIER_PT(nn.Module):
         # Initial hidden state
         H_input = output.clone()
         
-        # Calculate relevance scores (logits)
-        logit = torch.matmul(H_input, self.item_embedding.weight.T)
+        # Calculate relevance scores (logits) using combined item+type weights
+        logit = torch.matmul(H_input, self.combined_item_weight().T)
         rel_score = logit.softmax(-1)
         rel_score = rel_score * mask.clone()
         
@@ -287,8 +342,8 @@ class TRIER_PT(nn.Module):
         # Trade-off parameter (lambda)
         lamb = self.args.lamb
         
-        # Calculate diversity score using augmented trajectories
-        P_va = (torch.matmul(F, self.item_embedding.weight.T) * 10).softmax(-1)  # Augmented probabilities
+        # Calculate diversity score using augmented trajectories (combined item+type weights)
+        P_va = (torch.matmul(F, self.combined_item_weight().T) * 10).softmax(-1)
         P_a_u = attention_weght + 1e-24  # Avoid division by zero
         
         # Prepare already recommended items for encoding
@@ -424,8 +479,8 @@ class TRIER_PT(nn.Module):
     # Output: Total loss, main reconstruction loss
     # --------------------------
     def rec_loss(self, output, targets, nce_loss, div_loss, consec_loss=0):
-        # Convert hidden state to item logits
-        output = torch.matmul(output, self.item_embedding.weight.T)  # [batch_size, item_num]
+        # Convert hidden state to item logits (combined item+type weights)
+        output = torch.matmul(output, self.combined_item_weight().T)  # [batch_size, item_num]
         
         # Prepare targets for gather operation
         targets = targets.unsqueeze(-1)  # [batch_size, 1]
@@ -578,9 +633,12 @@ class TRIER_PT(nn.Module):
 
         # Get item embeddings
         item_emb = self.item_embedding(input_session_ids)
-        
-        # Combine item and position embeddings
-        input_emb = item_emb + position_embedding
+
+        # Get type embeddings (RecFormer-style: add category type info to item representation)
+        type_emb = self.get_type_embeddings(input_session_ids)
+
+        # Combine item, type, and position embeddings
+        input_emb = item_emb + type_emb + position_embedding
         input_emb = self.LayerNorm(input_emb)
         input_emb = self.dropout(input_emb)
         

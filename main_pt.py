@@ -279,6 +279,9 @@ if __name__ == '__main__':
         # Create PT model instance
         model = TRIER_PT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args)
 
+        # Load item type/category info into model (RecFormer-style type embeddings)
+        model.set_item_types(cate_map)
+
         # Load existing model if resuming training
         last_epoch = 0
         if resume:
@@ -429,9 +432,12 @@ if __name__ == '__main__':
         # Create validation dataset and data loader
         dataset = TestDataset(valid_file, valid_neg_file, item_num, max_seqs_len, modified_max_seqs_len)
         dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-        
+
         # Create PT model instance
         model = TRIER_PT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args)
+
+        # Load item type/category info into model (RecFormer-style type embeddings)
+        model.set_item_types(cate_map)
 
         # Move models to GPU if available
         if torch.cuda.is_available():
@@ -487,7 +493,7 @@ if __name__ == '__main__':
                     if args.t_mode == "topk":
                         # Fast top-k generation mode
                         output = model.test_forward(input_session_ids, input_reverse_ids, rt_model, False)
-                        output = torch.matmul(output, model.item_embedding.weight.T)  # [batch_size, item_num]
+                        output = torch.matmul(output, model.combined_item_weight().T)  # [batch_size, item_num]
                         _, rec_list = output.log_softmax(-1).topk(k=20, axis=-1)
                     elif args.t_mode == "greedy":
                         # Step-by-step greedy generation mode
@@ -495,7 +501,7 @@ if __name__ == '__main__':
                     else:
                         # Use encoder-only generation (no decoder)
                         output = model.test_forward(input_session_ids)  # [batch_size, hidden_unit]
-                        output = torch.matmul(output, model.item_embedding.weight.T)  # [batch_size, item_num]
+                        output = torch.matmul(output, model.combined_item_weight().T)  # [batch_size, item_num]
                         _, rec_list = output.log_softmax(-1).topk(k=20, axis=-1)
                     
                     # Evaluate recommendations (compute all metrics)
@@ -546,9 +552,12 @@ if __name__ == '__main__':
         # Create test dataset and data loader
         dataset = TestDataset(test_file, test_neg_file, item_num, max_seqs_len, modified_max_seqs_len)
         dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-        
+
         # Create PT model instance
         model = TRIER_PT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args)
+
+        # Load item type/category info into model (RecFormer-style type embeddings)
+        model.set_item_types(cate_map)
 
         # Move models to GPU if available
         if torch.cuda.is_available():
@@ -608,7 +617,7 @@ if __name__ == '__main__':
                     # Generate recommendations
                     if args.t_mode == "topk":
                         output = model.test_forward(input_session_ids, input_reverse_ids, rt_model, False)
-                        output = torch.matmul(output, model.item_embedding.weight.T)
+                        output = torch.matmul(output, model.combined_item_weight().T)
                         _, rec_list = output.log_softmax(-1).topk(k=20, axis=-1)
                     elif args.t_mode == "greedy":
                         output, rec_list = model.test_forward(input_session_ids, input_reverse_ids, rt_model, True)
