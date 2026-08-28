@@ -184,7 +184,11 @@ if __name__ == '__main__':
                     epoch, step, total_batches, acc_loss.item() / step, time.time()-start_time), flush=True)
             
             avg_loss = acc_loss.item() / step
-            torch.save(model.state_dict(), save_path + 'model/duorec-' + str(epoch) + '.pth')
+            # Write to temp file first, then rename (prevents corruption if interrupted)
+            tmp_path = save_path + 'model/duorec-' + str(epoch) + '.pth.tmp'
+            torch.save(model.state_dict(), tmp_path)
+            ckpt_path = save_path + 'model/duorec-' + str(epoch) + '.pth'
+            os.replace(tmp_path, ckpt_path)  # Atomic rename
 
             # Keep only the latest 2 checkpoints to save disk space
             import glob as _glob
