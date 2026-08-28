@@ -86,7 +86,7 @@ for CONFIG in "${PT_CONFIGS[@]}"; do
             -vn ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
             -en ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
             -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
-            -n 10728 -m valid -e ${LATEST_PT} -b 16 \
+            -n 10728 -m valid -e ${LATEST_PT} -b 64 \
             -div -lamb ${LAMB} -lmd_consec ${LMD_CONSEC} -t_mode topk \
             -start_epoch ${LATEST_PT} -epoch_step 1 \
             -i ${RT_DIR} -o ${PT_DIR} 2>&1 | tee "eval_pt_${SUFFIX}_valid_${VAR}.log"
@@ -100,7 +100,7 @@ for CONFIG in "${PT_CONFIGS[@]}"; do
             -vn ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
             -en ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
             -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
-            -n 10728 -m test -e ${LATEST_PT} -b 16 \
+            -n 10728 -m test -e ${LATEST_PT} -b 64 \
             -div -lamb ${LAMB} -lmd_consec ${LMD_CONSEC} -t_mode topk \
             -start_epoch ${LATEST_PT} -epoch_step 1 \
             -i ${RT_DIR} -o ${PT_DIR} 2>&1 | tee "eval_pt_${SUFFIX}_test_${VAR}.log"

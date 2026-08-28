@@ -1,203 +1,512 @@
 #!/usr/bin/env python3
 """
-Analyze results from all TRIER variants and baselines.
-Reads test_result.txt and valid_result.txt from each save directory.
-Generates a comparison table.
+Analyze and compile all evaluation results into LaTeX tables.
+
+Reads test_result.txt files from all PT configs and baselines,
+produces accuracy and diversity tables for all variants.
+
+Usage:
+    python3 analyze_results.py
 """
+
 import os
-import sys
-import glob
-import json
 import ast
+import re
+import sys
+from collections import OrderedDict
 
+# =============================================================================
+# Configuration
+# =============================================================================
 VARIANTS = [
-    "kuairec_highest_individual",
-    "kuairec_highest_average",
-    "kuairec_first_individual",
-    "kuairec_first_average",
+    ("kuairec_highest_individual", "Highest-Individual"),
+    ("kuairec_highest_average", "Highest-Average"),
+    ("kuairec_first_individual", "First-Individual"),
+    ("kuairec_first_average", "First-Average"),
 ]
 
-# Model directories to check: (label, path_pattern)
-MODEL_DIRS = [
-    ("RT",              "./save_rt_{var}"),
-    ("PT (lamb=0.1)",   "./save_pt_{var}"),
-    ("PT (no consec)",  "./save_pt_no_consec_{var}"),
-    ("PT (lamb=0.01)",  "./save_pt_lamb001_{var}"),
-    ("PT (lamb=0)",     "./save_pt_lamb0_{var}"),
+PT_CONFIGS = [
+    ("nodiv", 0.0, 0, "No-Div"),
+    ("lamb0005", 0.005, 0, "$\\lambda=0.005$"),
+    ("lamb001", 0.01, 0, "$\\lambda=0.01$"),
+    ("lamb005", 0.05, 0, "$\\lambda=0.05$"),
+    ("lamb01", 0.1, 0, "$\\lambda=0.1$"),
+    ("consec0001", 0.01, 0.001, "$\\lambda=0.01$+Cons"),
 ]
 
-# Baseline results (if available)
-BASELINE_DIRS = [
-    ("GRU4Rec",  "./baseline_results_kuairec_first_average/gru4rec_results.txt"),
-    ("SASRec",   "./baseline_results_kuairec_first_average/sasrec_results.txt"),
-    ("BERT4Rec", "./baseline_results_kuairec_first_average/bert4rec_results.txt"),
+BASELINES = [
+    ("GRU4Rec", "gru4rec"),
+    ("SASRec", "sasrec"),
+    ("BERT4Rec", "bert4rec"),
 ]
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def parse_result_file(filepath):
-    """Parse a result txt file into a dict of metrics.
-    Result files contain one Python dict literal per line (one per epoch).
-    We take the last (most recent) line."""
+
+def safe_parse_result(filepath):
+    """Parse a test_result.txt file, return dict or None."""
     if not os.path.exists(filepath):
         return None
     try:
         with open(filepath, 'r') as f:
-            lines = f.readlines()
-        if not lines:
+            content = f.read().strip()
+        if not content:
             return None
-        # Try each line from bottom up — last valid dict is the latest epoch
-        for line in reversed(lines):
-            line = line.strip()
-            if not line:
-                continue
-            # Skip log/info lines
-            if line.startswith('Loading') or line.startswith('Warning') or line.startswith('Using') or line.startswith('Best'):
-                continue
-            # Try Python dict literal (main format from main_pt.py / main_rt.py)
-            try:
-                d = ast.literal_eval(line)
-                if isinstance(d, dict):
-                    return d
-            except:
-                pass
-            # Try JSON
-            try:
-                d = json.loads(line)
-                if isinstance(d, dict):
-                    return d
-            except:
-                pass
-        # Fallback: try line-by-line key: value format (baselines)
-        result = {}
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith('epoch') or line.startswith('Loading') or line.startswith('Warning') or line.startswith('Using'):
-                continue
-            for sep in [': ', '= ']:
-                if sep in line:
-                    parts = line.split(sep, 1)
-                    if len(parts) == 2:
-                        key = parts[0].strip()
-                        val_str = parts[1].strip()
-                        try:
-                            val = float(val_str)
-                            result[key] = val
-                        except ValueError:
-                            pass
-                        break
-        return result if result else None
+        # Replace np.float64(...) and np.float32(...) with just the value
+        content = re.sub(r'np\.float64\(([^)]+)\)', r'\1', content)
+        content = re.sub(r'np\.float32\(([^)]+)\)', r'\1', content)
+        content = re.sub(r'np\.float\(([^)]+)\)', r'\1', content)
+        data = ast.literal_eval(content)
+        return data
     except Exception as e:
-        print(f"  Error parsing {filepath}: {e}")
+        print(f"  Warning: Failed to parse {filepath}: {e}")
         return None
 
 
-def metric_val(d, key):
-    """Get metric value, trying with and without _f suffix."""
-    if d is None:
-        return 0.0
-    if key in d:
-        val = d[key]
-        return float(val) if val is not None else 0.0
-    suffixed = f"{key}_f"
-    if suffixed in d:
-        val = d[suffixed]
-        return float(val) if val is not None else 0.0
-    return 0.0
+def parse_baseline_result(filepath):
+    """Parse a baseline results file, return dict or None."""
+    if not os.path.exists(filepath):
+        return None
+    result = {}
+    try:
+        with open(filepath, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if ':' not in line or line.startswith(('GRU4Rec', 'SASRec', 'BERT4Rec', 'Training', 'Epochs')):
+                    continue
+                key, val = line.split(':', 1)
+                key = key.strip()
+                val = val.strip()
+                try:
+                    result[key.lower().replace(' ', '')] = float(val)
+                except ValueError:
+                    pass
+    except Exception as e:
+        print(f"  Warning: Failed to parse {filepath}: {e}")
+        return None
+    return result if result else None
 
 
-def get_latest_epoch(save_dir):
-    """Find the latest checkpoint epoch number."""
-    model_dir = os.path.join(save_dir, "model")
-    if not os.path.exists(model_dir):
-        return "?"
-    ckpts = glob.glob(os.path.join(model_dir, "duorec-*.pth"))
-    if not ckpts:
-        return "?"
-    epochs = []
-    for f in ckpts:
-        try:
-            ep = int(f.split("duorec-")[1].split(".pth")[0])
-            epochs.append(ep)
-        except:
-            pass
-    return str(max(epochs)) if epochs else "?"
+def fmt(val, precision=4):
+    """Format a float value, handle None."""
+    if val is None:
+        return "--"
+    if isinstance(val, str):
+        return val
+    return f"{val:.{precision}f}"
+
+
+def get_metric(data, key):
+    """Extract a metric value from result dict."""
+    if data is None:
+        return None
+    return data.get(key, None)
+
+
+def collect_all_results():
+    """Collect all results into nested dict: [model_key][variant_key] = data."""
+    all_results = OrderedDict()
+
+    # PT configs
+    for suffix, lamb, lmd_consec, label in PT_CONFIGS:
+        model_key = f"pt_{suffix}"
+        all_results[model_key] = {"label": label, "results": {}}
+        for var_key, var_label in VARIANTS:
+            path = os.path.join(SCRIPT_DIR, f"save_pt_{suffix}_{var_key}", "test_result.txt")
+            print(f"  PT {suffix} / {var_key}: {path}")
+            data = safe_parse_result(path)
+            all_results[model_key]["results"][var_key] = data
+
+    # Baselines
+    for label, prefix in BASELINES:
+        model_key = f"baseline_{prefix}"
+        all_results[model_key] = {"label": label, "results": {}}
+        for var_key, var_label in VARIANTS:
+            path = os.path.join(SCRIPT_DIR, f"baseline_results_{var_key}", f"{prefix}_results.txt")
+            print(f"  {label} / {var_key}: {path}")
+            data = parse_baseline_result(path)
+            all_results[model_key]["results"][var_key] = data
+
+    return all_results
+
+
+def generate_accuracy_table(all_results, var_key, var_label):
+    """Generate LaTeX accuracy table for one variant."""
+    metrics = [
+        ("recall@5_f", "R@5"),
+        ("recall@10_f", "R@10"),
+        ("recall@20_f", "R@20"),
+        ("mrr@5_f", "MRR@5"),
+        ("mrr@10_f", "MRR@10"),
+        ("mrr@20_f", "MRR@20"),
+        ("ndcg@5_f", "N@5"),
+        ("ndcg@10_f", "N@10"),
+        ("ndcg@20_f", "N@20"),
+    ]
+
+    # Map baseline keys to our keys
+    baseline_key_map = {
+        "recall@5": "recall@5_f", "recall@10": "recall@10_f", "recall@20": "recall@20_f",
+        "mrr@5": "mrr@5_f", "mrr@10": "mrr@10_f", "mrr@20": "mrr@20_f",
+        "ndcg@5": "ndcg@5_f", "ndcg@10": "ndcg@10_f", "ndcg@20": "ndcg@20_f",
+    }
+
+    lines = []
+    lines.append(r"\begin{table}[ht]")
+    lines.append(r"\centering")
+    lines.append(r"\caption{Accuracy Metrics on " + var_label + r"}")
+    lines.append(r"\label{tab:acc_" + var_key.replace("kuairec_", "") + r"}")
+    lines.append(r"\begin{tabular}{l" + "c" * len(metrics) + r"}")
+    lines.append(r"\toprule")
+
+    # Header
+    header = "Model & " + " & ".join(m[1] for m in metrics) + r" \\"
+    lines.append(header)
+    lines.append(r"\midrule")
+
+    # Find best per metric (only among PT models)
+    best_vals = {}
+    for m_key, m_label in metrics:
+        best_vals[m_key] = -1
+        for model_key, model_info in all_results.items():
+            if not model_key.startswith("pt_"):
+                continue
+            data = model_info["results"].get(var_key)
+            if data:
+                val = get_metric(data, m_key)
+                if val is not None and val > best_vals[m_key]:
+                    best_vals[m_key] = val
+
+    # PT rows
+    for model_key, model_info in all_results.items():
+        if not model_key.startswith("pt_"):
+            continue
+        data = model_info["results"].get(var_key)
+        if data is None:
+            continue
+        row_vals = []
+        for m_key, m_label in metrics:
+            val = get_metric(data, m_key)
+            formatted = fmt(val)
+            # Bold if best (within PT models, tolerance 1e-4)
+            if val is not None and abs(val - best_vals[m_key]) < 1e-4:
+                formatted = r"\textbf{" + formatted + r"}"
+            row_vals.append(formatted)
+        line = model_info["label"] + " & " + " & ".join(row_vals) + r" \\"
+        lines.append(line)
+
+    lines.append(r"\midrule")
+
+    # Baseline rows
+    for model_key, model_info in all_results.items():
+        if not model_key.startswith("baseline_"):
+            continue
+        data = model_info["results"].get(var_key)
+        if data is None:
+            continue
+        row_vals = []
+        for m_key, m_label in metrics:
+            # Try direct key first, then mapped key
+            val = get_metric(data, m_key)
+            if val is None:
+                mapped_key = baseline_key_map.get(m_key, m_key)
+                val = get_metric(data, mapped_key)
+            row_vals.append(fmt(val))
+        line = model_info["label"] + " & " + " & ".join(row_vals) + r" \\"
+        lines.append(line)
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    lines.append(r"\end{table}")
+    return "\n".join(lines)
+
+
+def generate_diversity_table(all_results, var_key, var_label):
+    """Generate LaTeX diversity table for one variant."""
+    metrics = [
+        ("ILD@5", "ILD@5"),
+        ("ILD@10", "ILD@10"),
+        ("ILD@20", "ILD@20"),
+        ("CS@5", "CS@5"),
+        ("CS@10", "CS@10"),
+        ("CS@20", "CS@20"),
+        ("CC@5", "CC@5"),
+        ("CC@10", "CC@10"),
+        ("CC@20", "CC@20"),
+    ]
+
+    # Map baseline keys (lowercase, no @)
+    baseline_key_map = {m[0].lower().replace("@", ""): m[0] for m in metrics}
+
+    lines = []
+    lines.append(r"\begin{table}[ht]")
+    lines.append(r"\centering")
+    lines.append(r"\caption{Diversity Metrics on " + var_label + r"}")
+    lines.append(r"\label{tab:div_" + var_key.replace("kuairec_", "") + r"}")
+    lines.append(r"\begin{tabular}{l" + "c" * len(metrics) + r"}")
+    lines.append(r"\toprule")
+
+    header = "Model & " + " & ".join(m[1] for m in metrics) + r" \\"
+    lines.append(header)
+    lines.append(r"\midrule")
+
+    # Find best per metric (for diversity: ILD higher=better, CS lower=better, CC higher=better)
+    best_vals = {}
+    for m_key, m_label in metrics:
+        best_vals[m_key] = -1e9 if ("ILD" in m_key or "CC" in m_key) else 1e9
+        for model_key, model_info in all_results.items():
+            if not model_key.startswith("pt_"):
+                continue
+            data = model_info["results"].get(var_key)
+            if data:
+                val = get_metric(data, m_key)
+                if val is not None:
+                    if "ILD" in m_key or "CC" in m_key:
+                        if val > best_vals[m_key]:
+                            best_vals[m_key] = val
+                    else:  # CS: lower is better
+                        if val < best_vals[m_key]:
+                            best_vals[m_key] = val
+
+    # PT rows
+    for model_key, model_info in all_results.items():
+        if not model_key.startswith("pt_"):
+            continue
+        data = model_info["results"].get(var_key)
+        if data is None:
+            continue
+        row_vals = []
+        for m_key, m_label in metrics:
+            val = get_metric(data, m_key)
+            formatted = fmt(val)
+            if val is not None:
+                if "ILD" in m_key or "CC" in m_key:
+                    if abs(val - best_vals[m_key]) < 1e-3:
+                        formatted = r"\textbf{" + formatted + r"}"
+                else:
+                    if abs(val - best_vals[m_key]) < 1e-3:
+                        formatted = r"\textbf{" + formatted + r"}"
+            row_vals.append(formatted)
+        line = model_info["label"] + " & " + " & ".join(row_vals) + r" \\"
+        lines.append(line)
+
+    lines.append(r"\midrule")
+
+    # Baseline rows
+    for model_key, model_info in all_results.items():
+        if not model_key.startswith("baseline_"):
+            continue
+        data = model_info["results"].get(var_key)
+        if data is None:
+            continue
+        row_vals = []
+        for m_key, m_label in metrics:
+            val = get_metric(data, m_key)
+            if val is None:
+                mapped_key = baseline_key_map.get(m_key.lower().replace("@", ""))
+                if mapped_key:
+                    val = get_metric(data, mapped_key)
+            row_vals.append(fmt(val))
+        line = model_info["label"] + " & " + " & ".join(row_vals) + r" \\"
+        lines.append(line)
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    lines.append(r"\end{table}")
+    return "\n".join(lines)
+
+
+def generate_summary_table(all_results):
+    """Generate a summary table across all variants (R@10, N@10, ILD@10, CC@10)."""
+    metrics = [
+        ("recall@10_f", "R@10", False),
+        ("ndcg@10_f", "N@10", False),
+        ("ILD@10", "ILD@10", True),  # higher better
+        ("CC@10", "CC@10", True),    # higher better
+    ]
+
+    baseline_key_map = {
+        "recall@10_f": "recall@10", "ndcg@10_f": "ndcg@10",
+        "ILD@10": "ild@10", "CC@10": "cc@10",
+    }
+
+    lines = []
+    lines.append(r"\begin{table}[ht]")
+    lines.append(r"\centering")
+    lines.append(r"\caption{Summary: Accuracy and Diversity (R@10, N@10, ILD@10, CC@10) Across Variants}")
+    lines.append(r"\label{tab:summary}")
+    var_cols = "l" + "c" * (len(VARIANTS) * len(metrics))
+    lines.append(r"\begin{tabular}{" + var_cols + r"}")
+    lines.append(r"\toprule")
+
+    # Multi-row header
+    header1 = r"\multirow{2}{*}{Model} & "
+    for i, (vk, vl) in enumerate(VARIANTS):
+        header1 += r"\multicolumn{" + str(len(metrics)) + r"}{c}{" + vl + r"}"
+        if i < len(VARIANTS) - 1:
+            header1 += " & "
+    header1 += r" \\"
+    lines.append(header1)
+
+    lines.append(r"\cmidrule(lr){2-" + str(1 + len(metrics)) + r"}" +
+                 r" \cmidrule(lr){" + str(2 + len(metrics)) + "-" + str(1 + 2*len(metrics)) + r"}" +
+                 r" \cmidrule(lr){" + str(2 + 2*len(metrics)) + "-" + str(1 + 3*len(metrics)) + r"}" +
+                 r" \cmidrule(lr){" + str(2 + 3*len(metrics)) + "-" + str(1 + 4*len(metrics)) + r"}")
+
+    header2 = " & " + " & ".join([m[1] for m in metrics] * len(VARIANTS)) + r" \\"
+    lines.append(header2)
+    lines.append(r"\midrule")
+
+    # PT rows
+    for model_key, model_info in all_results.items():
+        if not model_key.startswith("pt_"):
+            continue
+        row = model_info["label"]
+        for vk, vl in VARIANTS:
+            data = model_info["results"].get(vk)
+            for m_key, m_label, _ in metrics:
+                val = get_metric(data, m_key) if data else None
+                row += " & " + fmt(val)
+        row += r" \\"
+        lines.append(row)
+
+    lines.append(r"\midrule")
+
+    # Baseline rows
+    for model_key, model_info in all_results.items():
+        if not model_key.startswith("baseline_"):
+            continue
+        row = model_info["label"]
+        for vk, vl in VARIANTS:
+            data = model_info["results"].get(vk)
+            for m_key, m_label, _ in metrics:
+                val = None
+                if data:
+                    val = get_metric(data, m_key)
+                    if val is None:
+                        mapped = baseline_key_map.get(m_key, m_key)
+                        val = get_metric(data, mapped.lower().replace(" ", ""))
+                row += " & " + fmt(val)
+        row += r" \\"
+        lines.append(row)
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    lines.append(r"\end{table}")
+    return "\n".join(lines)
+
+
+def generate_csv_summary(all_results):
+    """Generate CSV summary for easy copy/paste."""
+    lines = []
+    header = "Model,Variant,R@5,R@10,R@20,MRR@5,MRR@10,MRR@20,NDCG@5,NDCG@10,NDCG@20,ILD@5,ILD@10,ILD@20,CS@5,CS@10,CS@20,CC@5,CC@10,CC@20"
+    lines.append(header)
+
+    metric_keys = [
+        "recall@5_f", "recall@10_f", "recall@20_f",
+        "mrr@5_f", "mrr@10_f", "mrr@20_f",
+        "ndcg@5_f", "ndcg@10_f", "ndcg@20_f",
+        "ILD@5", "ILD@10", "ILD@20",
+        "CS@5", "CS@10", "CS@20",
+        "CC@5", "CC@10", "CC@20",
+    ]
+    baseline_map = {
+        "recall@5_f": "recall@5", "recall@10_f": "recall@10", "recall@20_f": "recall@20",
+        "mrr@5_f": "mrr@5", "mrr@10_f": "mrr@10", "mrr@20_f": "mrr@20",
+        "ndcg@5_f": "ndcg@5", "ndcg@10_f": "ndcg@10", "ndcg@20_f": "ndcg@20",
+        "ILD@5": "ild@5", "ILD@10": "ild@10", "ILD@20": "ild@20",
+        "CS@5": "cs@5", "CS@10": "cs@10", "CS@20": "cs@20",
+        "CC@5": "cc@5", "CC@10": "cc@10", "CC@20": "cc@20",
+    }
+
+    for model_key, model_info in all_results.items():
+        for vk, vl in VARIANTS:
+            data = model_info["results"].get(vk)
+            row = [model_info["label"], vl]
+            for mk in metric_keys:
+                val = None
+                if data:
+                    val = get_metric(data, mk)
+                    if val is None:
+                        bkey = baseline_map.get(mk, mk).lower().replace(" ", "")
+                        val = get_metric(data, bkey)
+                row.append(fmt(val))
+            lines.append(",".join(row))
+
+    return "\n".join(lines)
 
 
 def main():
-    print("=" * 120)
-    print("COMPARISON SUMMARY")
-    print("=" * 120)
+    print("=" * 60)
+    print("Collecting results...")
+    print("=" * 60)
+    all_results = collect_all_results()
 
-    # Header
-    header = f"{'Variant':<20} | {'Model':<18} | {'Best Ep':<7} | {'V_R@5':<8} {'V_R@10':<8} {'V_R@20':<8} {'V_N@10':<8} {'V_N@20':<8} {'V_M@10':<8} {'V_ILD@10':<9} {'V_CS@10':<8} {'V_CC@10':<8} | {'T_R@10':<8} {'T_N@10':<8} {'T_ILD@10':<9} {'T_CS@10':<8} {'T_CC@10':<8}"
-    print(header)
-    print("-" * 120)
+    # Count available results
+    total = 0
+    found = 0
+    for mk, mi in all_results.items():
+        for vk, vl in VARIANTS:
+            total += 1
+            if mi["results"].get(vk) is not None:
+                found += 1
+    print(f"\nFound {found}/{total} result files\n")
 
-    for var in VARIANTS:
-        for label, path_pattern in MODEL_DIRS:
-            save_dir = path_pattern.replace("{var}", var)
-            if not os.path.exists(save_dir):
-                continue
+    if found == 0:
+        print("No results found. Run eval_all.sh first.")
+        return
 
-            # Parse test and valid results
-            test_file = os.path.join(save_dir, "test_result.txt")
-            valid_file = os.path.join(save_dir, "valid_result.txt")
-            test_data = parse_result_file(test_file)
-            valid_data = parse_result_file(valid_file)
+    print("=" * 60)
+    print("Generating LaTeX tables...")
+    print("=" * 60)
 
-            if test_data is None and valid_data is None:
-                continue
+    output = []
+    output.append("% ============================================================")
+    output.append("% Auto-generated LaTeX tables from evaluation results")
+    output.append("% Generated by analyze_results.py")
+    output.append("% ============================================================")
+    output.append("")
 
-            best_ep = get_latest_epoch(save_dir)
+    # Summary table (all variants in one)
+    output.append("% --- Summary Table ---")
+    output.append(generate_summary_table(all_results))
+    output.append("")
 
-            # Validation metrics
-            v_r5  = metric_val(valid_data, "recall@5")
-            v_r10 = metric_val(valid_data, "recall@10")
-            v_r20 = metric_val(valid_data, "recall@20")
-            v_n10 = metric_val(valid_data, "ndcg@10")
-            v_n20 = metric_val(valid_data, "ndcg@20")
-            v_m10 = metric_val(valid_data, "mrr@10")
-            v_ild10 = metric_val(valid_data, "ILD@10")
-            v_cs10  = metric_val(valid_data, "CS@10")
-            v_cc10  = metric_val(valid_data, "CC@10")
+    # Per-variant tables
+    for vk, vl in VARIANTS:
+        output.append(f"% --- {vl} ---")
+        output.append(generate_accuracy_table(all_results, vk, vl))
+        output.append("")
+        output.append(generate_diversity_table(all_results, vk, vl))
+        output.append("")
 
-            # Test metrics
-            t_r10 = metric_val(test_data, "recall@10")
-            t_n10 = metric_val(test_data, "ndcg@10")
-            t_ild10 = metric_val(test_data, "ILD@10")
-            t_cs10  = metric_val(test_data, "CS@10")
-            t_cc10  = metric_val(test_data, "CC@10")
+    # CSV summary
+    output.append("% --- CSV Summary ---")
+    output.append("% (commented out — uncomment to use)")
+    csv_lines = generate_csv_summary(all_results)
+    for line in csv_lines.split("\n"):
+        output.append("% " + line)
+    output.append("")
 
-            row = f"{var:<20} | {label:<18} | {best_ep:<7} | {v_r5:<8.4f} {v_r10:<8.4f} {v_r20:<8.4f} {v_n10:<8.4f} {v_n20:<8.4f} {v_m10:<8.4f} {v_ild10:<9.4f} {v_cs10:<8.4f} {v_cc10:<8.4f} | {t_r10:<8.4f} {t_n10:<8.4f} {t_ild10:<9.4f} {t_cs10:<8.4f} {t_cc10:<8.4f}"
-            print(row)
+    latex_content = "\n".join(output)
 
-    # Baselines (only first_average)
-    print("-" * 120)
-    print("Baselines (first_average):")
-    print("-" * 120)
-    for label, path in BASELINE_DIRS:
-        if not os.path.exists(path):
-            continue
-        data = parse_result_file(path)
-        if data is None:
-            continue
-        r5  = metric_val(data, "Recall@5")
-        r10 = metric_val(data, "Recall@10")
-        r20 = metric_val(data, "Recall@20")
-        n5  = metric_val(data, "NDCG@5")
-        n10 = metric_val(data, "NDCG@10")
-        n20 = metric_val(data, "NDCG@20")
-        m5  = metric_val(data, "MRR@5")
-        m10 = metric_val(data, "MRR@10")
-        m20 = metric_val(data, "MRR@20")
-        print(f"{'first_average':<20} | {label:<18} | {'500':<7} | {r5:<8.4f} {r10:<8.4f} {r20:<8.4f} {n10:<8.4f} {n20:<8.4f} {m10:<8.4f} {'N/A':<9} {'N/A':<8} {'N/A':<8} | {r10:<8.4f} {n10:<8.4f} {'N/A':<9} {'N/A':<8} {'N/A':<8}")
+    # Write to file
+    out_file = os.path.join(SCRIPT_DIR, "results_tables.tex")
+    with open(out_file, 'w') as f:
+        f.write(latex_content)
+    print(f"\nLaTeX tables written to: {out_file}")
 
-    print("=" * 120)
-    print("Analysis complete.")
-    print("=" * 120)
+    # Also print to stdout
+    print("\n" + "=" * 60)
+    print(latex_content)
+    print("=" * 60)
+
+    # Also write CSV
+    csv_file = os.path.join(SCRIPT_DIR, "results_summary.csv")
+    with open(csv_file, 'w') as f:
+        f.write(generate_csv_summary(all_results))
+    print(f"\nCSV summary written to: {csv_file}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
