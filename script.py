@@ -29,6 +29,7 @@ def get_args():
     parser.add_argument('-ef', type=str, default='./Yelp/test-v0.txt', help='测试集数据的路径')
     parser.add_argument('-cat', type=str, default="./Yelp/yelp_cate.txt", help='catergory数据路径')
     parser.add_argument('-n_cat', type=int, default=100, help='catergory数量')
+    parser.add_argument('-vec', type=str, default=None, help='pre-trained item2vec path (e.g. ./KuaiRec_variants/kuairec_vec.npy); auto-detected if unset')
     parser.add_argument('-vn', type=str, default='./Yelp/Yelp-random-sample_size=99-seed=4444.txt', help='验证集负例的路径')
     parser.add_argument('-en', type=str, default='./Yelp/Yelp-random-sample_size=99-seed=4444.txt', help='测试集负例的路径')
 

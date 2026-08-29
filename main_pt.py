@@ -206,14 +206,21 @@ if __name__ == '__main__':
     # Load pre-trained item embeddings (for ILD and CS calculation)
     # Try multiple paths: Yelp, Kuairec, or fall back to model's own embeddings
     item2vec = None
-    for vec_path in ["./Yelp/yelp_vec.npy", "./KuaiRec/kuairec_vec.npy", "./kuairec_vec.npy", "./KuaiRec_variants/kuairec_vec.npy"]:
+    if getattr(args, 'vec', None):
         try:
-            item2vec = np.load(vec_path)
-            item2vec = torch.tensor(item2vec)
-            print(f"Loaded item embeddings from {vec_path}")
-            break
-        except:
-            continue
+            item2vec = torch.tensor(np.load(args.vec))
+            print(f"Loaded item embeddings from {args.vec}")
+        except Exception as e:
+            print(f"Warning: failed to load -vec {args.vec}: {e}")
+    if item2vec is None:
+        for vec_path in ["./KuaiRec_variants/kuairec_vec.npy", "./KuaiRec/kuairec_vec.npy", "./kuairec_vec.npy", "./Yelp/yelp_vec.npy"]:
+            try:
+                item2vec = np.load(vec_path)
+                item2vec = torch.tensor(item2vec)
+                print(f"Loaded item embeddings from {vec_path}")
+                break
+            except:
+                continue
     if item2vec is None:
         print("Warning: No pre-trained item embeddings found (yelp_vec.npy / kuairec_vec.npy).")
         print("  Will use model's own item_embedding.weight for ILD/CS metrics after model is loaded.")
