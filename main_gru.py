@@ -67,16 +67,16 @@ def metric_all_intervals(epoch, total_result, length=None):
 # --------------------------
 
 if __name__ == '__main__':
-    # Parse args (reuse get_args from script.py, then add -model_type)
-    args = get_args()
-    # Add model_type arg after the fact (not in script.py's parser)
-    # We'll parse it manually since get_args doesn't include it
-    import sys as _sys
+    # Strip -model_type from sys.argv BEFORE calling get_args(),
+    # since script.py's argparse parser doesn't know about it.
     model_type = 'pt'  # default
-    if '-model_type' in _sys.argv:
-        idx = _sys.argv.index('-model_type')
-        if idx + 1 < len(_sys.argv):
-            model_type = _sys.argv[idx + 1]
+    if '-model_type' in sys.argv:
+        idx = sys.argv.index('-model_type')
+        if idx + 1 < len(sys.argv):
+            model_type = sys.argv[idx + 1]
+            sys.argv.pop(idx)  # remove '-model_type'
+            sys.argv.pop(idx)  # remove the value (was at idx+1, now at idx)
+    args = get_args()
     args.model_type = model_type
 
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

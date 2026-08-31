@@ -71,6 +71,7 @@ for variant in "${VARIANTS[@]}"; do
         -en ./KuaiRec_variants/${variant}/KuaiRec-random-sample_size=99-seed=4444.txt \
         -cat ./KuaiRec_variants/${variant}/kuairec_cate.txt \
         -n 10728 -n_cat 31 -e 500 -b 64 -l 5e-4 \
+        -m train \
         -early_stop -patience 50 -min_delta 0.0001 \
         -start_epoch ${start_epoch} -epoch_step 1 \
         -o ./${rt_dir} \
@@ -145,6 +146,7 @@ for config_line in "${CONFIGS[@]}"; do
             -en ./KuaiRec_variants/${variant}/KuaiRec-random-sample_size=99-seed=4444.txt \
             -cat ./KuaiRec_variants/${variant}/kuairec_cate.txt \
             -n 10728 -n_cat 31 -e 500 -b 64 -l 5e-4 \
+            -m train \
             ${div_flag} ${consec_flag} \
             -t_mode topk \
             -early_stop -patience 50 -min_delta 0.0001 \
