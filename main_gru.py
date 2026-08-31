@@ -193,7 +193,7 @@ if __name__ == '__main__':
                         sem_aug_input_session_ids = sem_aug_input_session_ids.cuda()
 
                     output, nce_loss, dis_reg, me_reg = model.train_forward(input_session_ids, sem_aug_input_session_ids)
-                    loss = model.rec_loss(output, targets, nce_loss, dis_reg, me_reg)
+                    loss, main_loss = model.rec_loss(output, targets, nce_loss, dis_reg, me_reg)
                     loss.backward()
                     optimizer.step()
                     acc_loss += loss
