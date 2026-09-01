@@ -136,6 +136,32 @@ def init_seeds(seed=0, cuda_deterministic=True):
         cudnn.benchmark = True
 
 
+def load_state_dict_compat(model, ckpt_path, device):
+    """
+    Load a checkpoint with backward compatibility for pre-type-embedding models.
+
+    Old checkpoints (trained before type embeddings were added) lack the
+    'type_embedding.weight' key and 'item_type_ids' buffer. For those, load
+    non-strictly and zero the type embeddings so inference matches training
+    (zero type embeddings contribute nothing to the sum).
+    """
+    state_dict = torch.load(ckpt_path, map_location=device)
+    if 'type_embedding.weight' in state_dict:
+        model.load_state_dict(state_dict)
+    else:
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        allowed_missing = {'type_embedding.weight', 'item_type_ids'}
+        bad_missing = [k for k in missing if k not in allowed_missing]
+        if bad_missing:
+            raise RuntimeError(f'Unexpected missing keys in {ckpt_path}: {bad_missing}')
+        if unexpected:
+            raise RuntimeError(f'Unexpected keys in {ckpt_path}: {unexpected}')
+        # No-type model: zero out type embeddings (no contribution at inference)
+        with torch.no_grad():
+            model.type_embedding.weight.zero_()
+        print(f'[compat] Loaded pre-type-embedding checkpoint {ckpt_path}; type embeddings zeroed')
+
+
 def xavier_init(model):
     """
     初始化模型参数

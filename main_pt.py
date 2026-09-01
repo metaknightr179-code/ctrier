@@ -481,8 +481,8 @@ if __name__ == '__main__':
                 print(f'Skipping epoch {epoch}: checkpoint not found at {ckpt_path}', flush=True)
                 epoch += args.epoch_step
                 continue
-            model.load_state_dict(torch.load(ckpt_path, map_location=args.device))
-            
+            load_state_dict_compat(model, ckpt_path, args.device)
+
             # Disable gradient computation (faster inference)
             with torch.no_grad():
                 for batch in dataloader:
@@ -603,8 +603,8 @@ if __name__ == '__main__':
                 print(f'Skipping epoch {epoch}: checkpoint not found at {ckpt_path}', flush=True)
                 epoch += args.epoch_step
                 continue
-            model.load_state_dict(torch.load(ckpt_path, map_location=args.device))
-            
+            load_state_dict_compat(model, ckpt_path, args.device)
+
             # Disable gradient computation
             with torch.no_grad():
                 for batch in dataloader:

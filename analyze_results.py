@@ -34,6 +34,15 @@ PT_CONFIGS = [
     ("consec0001", 0.01, 0.001, "$\\lambda=0.01$+Cons"),
 ]
 
+GRU_CONFIGS = [
+    ("nodiv", "GRU-No-Div"),
+    ("lamb0005", "GRU $\\lambda=0.005$"),
+    ("lamb001", "GRU $\\lambda=0.01$"),
+    ("lamb005", "GRU $\\lambda=0.05$"),
+    ("lamb01", "GRU $\\lambda=0.1$"),
+    ("consec0001", "GRU $\\lambda=0.01$+Cons"),
+]
+
 BASELINES = [
     ("GRU4Rec", "gru4rec"),
     ("SASRec", "sasrec"),
@@ -117,6 +126,16 @@ def collect_all_results():
             data = safe_parse_result(path)
             all_results[model_key]["results"][var_key] = data
 
+    # GRU-based TRIER configs (checkpoints under save_pt_gru_<suffix>_<variant>)
+    for suffix, label in GRU_CONFIGS:
+        model_key = f"gru_{suffix}"
+        all_results[model_key] = {"label": label, "results": {}}
+        for var_key, var_label in VARIANTS:
+            path = os.path.join(SCRIPT_DIR, f"save_pt_gru_{suffix}_{var_key}", "test_result.txt")
+            print(f"  GRU {suffix} / {var_key}: {path}")
+            data = safe_parse_result(path)
+            all_results[model_key]["results"][var_key] = data
+
     # Baselines
     for label, prefix in BASELINES:
         model_key = f"baseline_{prefix}"
@@ -130,7 +149,7 @@ def collect_all_results():
     return all_results
 
 
-def generate_accuracy_table(all_results, var_key, var_label):
+def generate_accuracy_table(all_results, var_key, var_label, prefix="pt_", label_prefix=""):
     """Generate LaTeX accuracy table for one variant."""
     metrics = [
         ("recall@5_f", "R@5"),
@@ -155,7 +174,7 @@ def generate_accuracy_table(all_results, var_key, var_label):
     lines.append(r"\begin{table}[ht]")
     lines.append(r"\centering")
     lines.append(r"\caption{Accuracy Metrics on " + var_label + r"}")
-    lines.append(r"\label{tab:acc_" + var_key.replace("kuairec_", "") + r"}")
+    lines.append(r"\label{tab:" + label_prefix + r"acc_" + var_key.replace("kuairec_", "") + r"}")
     lines.append(r"\begin{tabular}{l" + "c" * len(metrics) + r"}")
     lines.append(r"\toprule")
 
@@ -164,12 +183,12 @@ def generate_accuracy_table(all_results, var_key, var_label):
     lines.append(header)
     lines.append(r"\midrule")
 
-    # Find best per metric (only among PT models)
+    # Find best per metric (only among this family's models)
     best_vals = {}
     for m_key, m_label in metrics:
         best_vals[m_key] = -1
         for model_key, model_info in all_results.items():
-            if not model_key.startswith("pt_"):
+            if not model_key.startswith(prefix):
                 continue
             data = model_info["results"].get(var_key)
             if data:
@@ -177,9 +196,9 @@ def generate_accuracy_table(all_results, var_key, var_label):
                 if val is not None and val > best_vals[m_key]:
                     best_vals[m_key] = val
 
-    # PT rows
+    # Model family rows
     for model_key, model_info in all_results.items():
-        if not model_key.startswith("pt_"):
+        if not model_key.startswith(prefix):
             continue
         data = model_info["results"].get(var_key)
         if data is None:
@@ -221,7 +240,7 @@ def generate_accuracy_table(all_results, var_key, var_label):
     return "\n".join(lines)
 
 
-def generate_diversity_table(all_results, var_key, var_label):
+def generate_diversity_table(all_results, var_key, var_label, prefix="pt_", label_prefix=""):
     """Generate LaTeX diversity table for one variant."""
     metrics = [
         ("ILD@5", "ILD@5"),
@@ -242,7 +261,7 @@ def generate_diversity_table(all_results, var_key, var_label):
     lines.append(r"\begin{table}[ht]")
     lines.append(r"\centering")
     lines.append(r"\caption{Diversity Metrics on " + var_label + r"}")
-    lines.append(r"\label{tab:div_" + var_key.replace("kuairec_", "") + r"}")
+    lines.append(r"\label{tab:" + label_prefix + r"div_" + var_key.replace("kuairec_", "") + r"}")
     lines.append(r"\begin{tabular}{l" + "c" * len(metrics) + r"}")
     lines.append(r"\toprule")
 
@@ -255,7 +274,7 @@ def generate_diversity_table(all_results, var_key, var_label):
     for m_key, m_label in metrics:
         best_vals[m_key] = -1e9 if ("ILD" in m_key or "CC" in m_key) else 1e9
         for model_key, model_info in all_results.items():
-            if not model_key.startswith("pt_"):
+            if not model_key.startswith(prefix):
                 continue
             data = model_info["results"].get(var_key)
             if data:
@@ -268,9 +287,9 @@ def generate_diversity_table(all_results, var_key, var_label):
                         if val < best_vals[m_key]:
                             best_vals[m_key] = val
 
-    # PT rows
+    # Model family rows
     for model_key, model_info in all_results.items():
-        if not model_key.startswith("pt_"):
+        if not model_key.startswith(prefix):
             continue
         data = model_info["results"].get(var_key)
         if data is None:
@@ -316,7 +335,9 @@ def generate_diversity_table(all_results, var_key, var_label):
     return "\n".join(lines)
 
 
-def generate_summary_table(all_results):
+def generate_summary_table(all_results, prefix="pt_", label="tab:summary",
+                           caption="Summary: Accuracy and Diversity (R@10, N@10, ILD@10, CC@10) Across Variants",
+                           include_baselines=True):
     """Generate a summary table across all variants (R@10, N@10, ILD@10, CC@10)."""
     metrics = [
         ("recall@10_f", "R@10", False),
@@ -333,8 +354,8 @@ def generate_summary_table(all_results):
     lines = []
     lines.append(r"\begin{table}[ht]")
     lines.append(r"\centering")
-    lines.append(r"\caption{Summary: Accuracy and Diversity (R@10, N@10, ILD@10, CC@10) Across Variants}")
-    lines.append(r"\label{tab:summary}")
+    lines.append(r"\caption{" + caption + r"}")
+    lines.append(r"\label{" + label + r"}")
     var_cols = "l" + "c" * (len(VARIANTS) * len(metrics))
     lines.append(r"\begin{tabular}{" + var_cols + r"}")
     lines.append(r"\toprule")
@@ -357,9 +378,9 @@ def generate_summary_table(all_results):
     lines.append(header2)
     lines.append(r"\midrule")
 
-    # PT rows
+    # Model family rows
     for model_key, model_info in all_results.items():
-        if not model_key.startswith("pt_"):
+        if not model_key.startswith(prefix):
             continue
         row = model_info["label"]
         for vk, vl in VARIANTS:
@@ -370,25 +391,26 @@ def generate_summary_table(all_results):
         row += r" \\"
         lines.append(row)
 
-    lines.append(r"\midrule")
+    if include_baselines:
+        lines.append(r"\midrule")
 
-    # Baseline rows
-    for model_key, model_info in all_results.items():
-        if not model_key.startswith("baseline_"):
-            continue
-        row = model_info["label"]
-        for vk, vl in VARIANTS:
-            data = model_info["results"].get(vk)
-            for m_key, m_label, _ in metrics:
-                val = None
-                if data:
-                    val = get_metric(data, m_key)
-                    if val is None:
-                        mapped = baseline_key_map.get(m_key, m_key)
-                        val = get_metric(data, mapped.lower().replace(" ", ""))
-                row += " & " + fmt(val)
-        row += r" \\"
-        lines.append(row)
+        # Baseline rows
+        for model_key, model_info in all_results.items():
+            if not model_key.startswith("baseline_"):
+                continue
+            row = model_info["label"]
+            for vk, vl in VARIANTS:
+                data = model_info["results"].get(vk)
+                for m_key, m_label, _ in metrics:
+                    val = None
+                    if data:
+                        val = get_metric(data, m_key)
+                        if val is None:
+                            mapped = baseline_key_map.get(m_key, m_key)
+                            val = get_metric(data, mapped.lower().replace(" ", ""))
+                    row += " & " + fmt(val)
+            row += r" \\"
+            lines.append(row)
 
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}")
@@ -478,6 +500,19 @@ def main():
         output.append(generate_accuracy_table(all_results, vk, vl))
         output.append("")
         output.append(generate_diversity_table(all_results, vk, vl))
+        output.append("")
+
+    # GRU-based TRIER tables (separate section)
+    output.append("% --- GRU Summary Table ---")
+    output.append(generate_summary_table(
+        all_results, prefix="gru_", label="tab:gru_summary",
+        caption="GRU-based TRIER: Accuracy and Diversity (R@10, N@10, ILD@10, CC@10) Across Variants"))
+    output.append("")
+    for vk, vl in VARIANTS:
+        output.append(f"% --- GRU {vl} ---")
+        output.append(generate_accuracy_table(all_results, vk, vl, prefix="gru_", label_prefix="gru_"))
+        output.append("")
+        output.append(generate_diversity_table(all_results, vk, vl, prefix="gru_", label_prefix="gru_"))
         output.append("")
 
     # CSV summary
