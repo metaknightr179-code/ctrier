@@ -39,32 +39,9 @@ echo "############################################################"
 echo ""
 
 # =============================================================================
-# STEP 1: Check which RT checkpoints exist (warn, don't abort)
+# Train PT models (type + no-type in parallel)
 # =============================================================================
-echo "[Step 1] Checking RT checkpoints..."
-echo ""
-
-for variant in "${VARIANTS[@]}"; do
-    # Type RT
-    if [ -d "save_rt_type_${variant}/model" ] && [ -n "$(ls save_rt_type_${variant}/model/duorec-*.pth 2>/dev/null)" ]; then
-        echo "  OK: save_rt_type_${variant}"
-    else
-        echo "  SKIP TYPE: save_rt_type_${variant} (no checkpoints — type runs will be skipped)"
-    fi
-    # No-type RT (strip kuairec_ prefix)
-    notype_suffix="${variant#kuairec_}"
-    if [ -d "save_rt_kuairec_${notype_suffix}/model" ] && [ -n "$(ls save_rt_kuairec_${notype_suffix}/model/duorec-*.pth 2>/dev/null)" ]; then
-        echo "  OK: save_rt_kuairec_${notype_suffix}"
-    else
-        echo "  SKIP NO-TYPE: save_rt_kuairec_${notype_suffix} (no checkpoints — no-type runs will be skipped)"
-    fi
-done
-echo ""
-
-# =============================================================================
-# STEP 2: Train PT models (type + no-type in parallel)
-# =============================================================================
-echo "[Step 2] Training PT models: λ=0.002 and λ=0.003"
+echo "[Step] Training PT models: λ=0.002 and λ=0.003"
 echo ""
 
 for config_line in "${NEW_CONFIGS[@]}"; do
@@ -80,37 +57,33 @@ for config_line in "${NEW_CONFIGS[@]}"; do
         type_log="pt_type_${name}_${variant}.log"
         rt_type_dir="save_rt_type_${variant}"
 
-        if [ ! -d "${rt_type_dir}/model" ] || [ -z "$(ls ${rt_type_dir}/model/duorec-*.pth 2>/dev/null)" ]; then
-            echo "  [TYPE] SKIP: ${rt_type_dir} has no RT checkpoints"
-        else
-            echo "  [TYPE] Training ${type_dir}..."
-            start_epoch=1
-            if [ -d "${type_dir}/model" ]; then
-                latest=$(ls "${type_dir}/model/duorec-"*.pth 2>/dev/null | sort -t'-' -k2 -n | tail -1)
-                if [ -n "$latest" ]; then
-                    start_epoch=$(($(basename "$latest" | grep -oE '[0-9]+') + 1))
-                    echo "    Resuming from epoch ${start_epoch}"
-                fi
+        echo "  [TYPE] Training ${type_dir}..."
+        start_epoch=1
+        if [ -d "${type_dir}/model" ]; then
+            latest=$(ls "${type_dir}/model/duorec-"*.pth 2>/dev/null | sort -t'-' -k2 -n | tail -1)
+            if [ -n "$latest" ]; then
+                start_epoch=$(($(basename "$latest" | grep -oE '[0-9]+') + 1))
+                echo "    Resuming from epoch ${start_epoch}"
             fi
-
-            python3 main_pt.py \
-                -tf ./KuaiRec_variants/${variant}/train-v0.txt \
-                -vf ./KuaiRec_variants/${variant}/valid-v0.txt \
-                -ef ./KuaiRec_variants/${variant}/test-v0.txt \
-                -vn ./KuaiRec_variants/${variant}/KuaiRec-random-sample_size=99-seed=4444.txt \
-                -en ./KuaiRec_variants/${variant}/KuaiRec-random-sample_size=99-seed=4444.txt \
-                -cat ./KuaiRec_variants/${variant}/kuairec_cate.txt \
-                -n 10728 -n_cat 31 -e 500 -b 64 -l 5e-4 \
-                -div -lamb ${lamb} -lmd_consec ${lmd_consec} \
-                -t_mode topk \
-                -early_stop -patience 50 -min_delta 0.0001 \
-                -start_epoch ${start_epoch} -epoch_step 1 \
-                -i ./${rt_type_dir} \
-                -o ./${type_dir} \
-                2>&1 | tee "$type_log"
-
-            echo "  [TYPE] Done: ${name} / ${variant}"
         fi
+
+        python3 main_pt.py \
+            -tf ./KuaiRec_variants/${variant}/train-v0.txt \
+            -vf ./KuaiRec_variants/${variant}/valid-v0.txt \
+            -ef ./KuaiRec_variants/${variant}/test-v0.txt \
+            -vn ./KuaiRec_variants/${variant}/KuaiRec-random-sample_size=99-seed=4444.txt \
+            -en ./KuaiRec_variants/${variant}/KuaiRec-random-sample_size=99-seed=4444.txt \
+            -cat ./KuaiRec_variants/${variant}/kuairec_cate.txt \
+            -n 10728 -n_cat 31 -e 500 -b 64 -l 5e-4 \
+            -div -lamb ${lamb} -lmd_consec ${lmd_consec} \
+            -t_mode topk \
+            -early_stop -patience 50 -min_delta 0.0001 \
+            -start_epoch ${start_epoch} -epoch_step 1 \
+            -i ./${rt_type_dir} \
+            -o ./${type_dir} \
+            2>&1 | tee "$type_log"
+
+        echo "  [TYPE] Done: ${name} / ${variant}"
         echo ""
 
         # ---- NO-TYPE VERSION ----
@@ -118,37 +91,33 @@ for config_line in "${NEW_CONFIGS[@]}"; do
         notype_log="pt_${name}_${variant}.log"
         rt_notype_dir="save_rt_kuairec_${variant#kuairec_}"
 
-        if [ ! -d "${rt_notype_dir}/model" ] || [ -z "$(ls ${rt_notype_dir}/model/duorec-*.pth 2>/dev/null)" ]; then
-            echo "  [NO-TYPE] SKIP: ${rt_notype_dir} has no RT checkpoints"
-        else
-            echo "  [NO-TYPE] Training ${notype_dir}..."
-            start_epoch=1
-            if [ -d "${notype_dir}/model" ]; then
-                latest=$(ls "${notype_dir}/model/duorec-"*.pth 2>/dev/null | sort -t'-' -k2 -n | tail -1)
-                if [ -n "$latest" ]; then
-                    start_epoch=$(($(basename "$latest" | grep -oE '[0-9]+') + 1))
-                    echo "    Resuming from epoch ${start_epoch}"
-                fi
+        echo "  [NO-TYPE] Training ${notype_dir}..."
+        start_epoch=1
+        if [ -d "${notype_dir}/model" ]; then
+            latest=$(ls "${notype_dir}/model/duorec-"*.pth 2>/dev/null | sort -t'-' -k2 -n | tail -1)
+            if [ -n "$latest" ]; then
+                start_epoch=$(($(basename "$latest" | grep -oE '[0-9]+') + 1))
+                echo "    Resuming from epoch ${start_epoch}"
             fi
-
-            python3 main_pt.py \
-                -tf ./KuaiRec_variants/${variant}/train-v0.txt \
-                -vf ./KuaiRec_variants/${variant}/valid-v0.txt \
-                -ef ./KuaiRec_variants/${variant}/test-v0.txt \
-                -vn ./KuaiRec_variants/${variant}/KuaiRec-random-sample_size=99-seed=4444.txt \
-                -en ./KuaiRec_variants/${variant}/KuaiRec-random-sample_size=99-seed=4444.txt \
-                -cat ./KuaiRec_variants/${variant}/kuairec_cate.txt \
-                -n 10728 -n_cat 31 -e 500 -b 64 -l 5e-4 \
-                -div -lamb ${lamb} -lmd_consec ${lmd_consec} \
-                -t_mode topk \
-                -early_stop -patience 50 -min_delta 0.0001 \
-                -start_epoch ${start_epoch} -epoch_step 1 \
-                -i ./${rt_notype_dir} \
-                -o ./${notype_dir} \
-                2>&1 | tee "$notype_log"
-
-            echo "  [NO-TYPE] Done: ${name} / ${variant}"
         fi
+
+        python3 main_pt.py \
+            -tf ./KuaiRec_variants/${variant}/train-v0.txt \
+            -vf ./KuaiRec_variants/${variant}/valid-v0.txt \
+            -ef ./KuaiRec_variants/${variant}/test-v0.txt \
+            -vn ./KuaiRec_variants/${variant}/KuaiRec-random-sample_size=99-seed=4444.txt \
+            -en ./KuaiRec_variants/${variant}/KuaiRec-random-sample_size=99-seed=4444.txt \
+            -cat ./KuaiRec_variants/${variant}/kuairec_cate.txt \
+            -n 10728 -n_cat 31 -e 500 -b 64 -l 5e-4 \
+            -div -lamb ${lamb} -lmd_consec ${lmd_consec} \
+            -t_mode topk \
+            -early_stop -patience 50 -min_delta 0.0001 \
+            -start_epoch ${start_epoch} -epoch_step 1 \
+            -i ./${rt_notype_dir} \
+            -o ./${notype_dir} \
+            2>&1 | tee "$notype_log"
+
+        echo "  [NO-TYPE] Done: ${name} / ${variant}"
         echo ""
     done
 done
