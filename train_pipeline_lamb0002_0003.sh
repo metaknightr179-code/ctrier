@@ -16,7 +16,11 @@
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+
+# Override this if your project root is elsewhere:
+#   PROJECT_DIR=/home/zhangrui/ctrier_type bash train_pipeline_lamb0002_0003.sh
+PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
+cd "$PROJECT_DIR"
 
 VARIANTS=(
     kuairec_highest_individual
