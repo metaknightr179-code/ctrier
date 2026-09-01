@@ -51,9 +51,10 @@ for variant in "${VARIANTS[@]}"; do
         echo "  WARNING: save_rt_type_${variant} has no checkpoints"
         ALL_RT_OK=false
     fi
-    # No-type RT
-    if [ ! -d "save_rt_kuairec_${variant}/model" ] || [ -z "$(ls save_rt_kuairec_${variant}/model/duorec-*.pth 2>/dev/null)" ]; then
-        echo "  WARNING: save_rt_kuairec_${variant} has no checkpoints"
+    # No-type RT (strip kuairec_ prefix: variant=kuairec_highest_individual -> save_rt_kuairec_highest_individual)
+    notype_suffix="${variant#kuairec_}"
+    if [ ! -d "save_rt_kuairec_${notype_suffix}/model" ] || [ -z "$(ls save_rt_kuairec_${notype_suffix}/model/duorec-*.pth 2>/dev/null)" ]; then
+        echo "  WARNING: save_rt_kuairec_${notype_suffix} has no checkpoints"
         ALL_RT_OK=false
     fi
 done
@@ -119,7 +120,7 @@ for config_line in "${NEW_CONFIGS[@]}"; do
         echo "  [NO-TYPE] Training save_pt_${name}_${variant}..."
         notype_dir="save_pt_${name}_${variant}"
         notype_log="pt_${name}_${variant}.log"
-        rt_notype_dir="save_rt_kuairec_${variant}"
+        rt_notype_dir="save_rt_kuairec_${variant#kuairec_}"
 
         start_epoch=1
         if [ -d "${notype_dir}/model" ]; then

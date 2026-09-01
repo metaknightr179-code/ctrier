@@ -73,7 +73,7 @@ for CONFIG in "${CONFIGS[@]}"; do
         fi
 
         # ---- NO-TYPE VERSION ----
-        RT_NOTYPE_DIR="./save_rt_kuairec_${VAR}"
+        RT_NOTYPE_DIR="./save_rt_kuairec_${VAR#kuairec_}"
         PT_NOTYPE_DIR="./save_pt_${SUFFIX}_${VAR}"
         LATEST_PT_NOTYPE=$(get_latest_epoch "${PT_NOTYPE_DIR}/model")
 
