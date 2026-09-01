@@ -7,8 +7,9 @@
 #   No-type: save_pt_lamb0002_<variant>    / save_pt_lamb0003_<variant>
 #
 # Usage:
-#   bash eval_lamb0002_0003.sh
-#   nohup bash eval_lamb0002_0003.sh > eval_lamb0002_0003.log 2>&1 &
+#   bash ~/ctrier/eval_lamb0002_0003.sh
+#   nohup bash ~/ctrier/eval_lamb0002_0003.sh > ~/ctrier/eval_lamb0002_0003.log 2>&1 &
+#   nohup bash ~/ctrier_type/eval_lamb0002_0003.sh > ~/ctrier_type/eval_lamb0002_0003.log 2>&1 &
 # =============================================================================
 
 VARIANTS=(
@@ -25,11 +26,7 @@ CONFIGS=(
 )
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-# Override this if your project root is elsewhere:
-#   PROJECT_DIR=/home/zhangrui/ctrier_type bash eval_lamb0002_0003.sh
-PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
-cd "${PROJECT_DIR}"
+cd "${SCRIPT_DIR}"
 
 GPU=0
 

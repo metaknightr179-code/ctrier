@@ -11,16 +11,13 @@
 #   No-type: save_rt_kuairec_<variant> (reuse existing)
 #
 # Usage:
-#   bash train_pipeline_lamb0002_0003.sh
-#   nohup bash train_pipeline_lamb0002_0003.sh > train_lamb0002_0003.log 2>&1 &
+#   bash ~/ctrier/train_pipeline_lamb0002_0003.sh
+#   nohup bash ~/ctrier/train_pipeline_lamb0002_0003.sh > ~/ctrier/train_lamb0002_0003.log 2>&1 &
+#   nohup bash ~/ctrier_type/train_pipeline_lamb0002_0003.sh > ~/ctrier_type/train_lamb0002_0003.log 2>&1 &
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-# Override this if your project root is elsewhere:
-#   PROJECT_DIR=/home/zhangrui/ctrier_type bash train_pipeline_lamb0002_0003.sh
-PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
-cd "$PROJECT_DIR"
+cd "$SCRIPT_DIR"
 
 VARIANTS=(
     kuairec_highest_individual
