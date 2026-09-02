@@ -14,13 +14,10 @@
 #   Type:    save_rt_type_<variant>
 #   No-type: save_rt_kuairec_<variant#kuairec_>
 #
-# Usage (run in the project directory where all files live):
-#   bash train_pipeline_fixloss.sh
-#   nohup bash train_pipeline_fixloss.sh > train_fixloss.log 2>&1 &
+# Usage (run in the directory where Python files + data + RT checkpoints all live):
+#   cd /tmp/zhangrui_run_fixed && bash train_pipeline_fixloss.sh
+#   cd /tmp/zhangrui_run_fixed && nohup bash train_pipeline_fixloss.sh > train_fixloss.log 2>&1 &
 # =============================================================================
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
 
 VARIANTS=(
     kuairec_highest_individual
