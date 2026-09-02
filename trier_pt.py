@@ -399,10 +399,7 @@ class TRIER_PT(nn.Module):
         P = pre_logit.log().sum(-1)
         
         # Diversity loss: encourages higher ILD_ture (more diverse) while maintaining reasonable probability
-        # Reward (negative loss) when diverse path is MORE diverse than greedy (ILD_ture > ILD_greedy)
-        # Penalize (positive loss) when diverse path is LESS diverse than greedy
-        # The probability factor amplifies penalty when diverse selections have lower probability
-        div_loss = -1 * (ILD_ture - ILD_greedy) * (1 + torch.exp((P_rel - P) / 10)).log()
+        div_loss = -1 * (ILD_greedy - ILD_ture) * (1 + torch.exp((P_rel - P) / 10)).log()
         div_loss = div_loss.mean()
 
         return div_loss
