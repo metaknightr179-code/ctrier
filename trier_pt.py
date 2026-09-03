@@ -209,9 +209,12 @@ class TRIER_PT(nn.Module):
 
         # Create padding mask (True where padding exists)
         padding_mask = (input_session_ids == 0)
-        
+
+        # Causal mask: position i can only attend to positions <= i (original TRIER behavior)
+        src_mask = (1 - torch.tril(torch.ones(input_emb.shape[0], input_emb.shape[0], device=padding_mask.device))).bool()  # [seq_len, seq_len]
+
         # Pass through transformer encoder
-        output = self.trm_encoder(input_emb, src_key_padding_mask=padding_mask)
+        output = self.trm_encoder(input_emb, mask=src_mask, src_key_padding_mask=padding_mask)
         output = output.permute(1, 0, 2)  # [batch_size, seq_len, emb_size]
         
         # Clamp sequence length to avoid index errors
