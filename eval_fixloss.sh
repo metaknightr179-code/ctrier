@@ -1,0 +1,93 @@
+#!/bin/bash
+# Evaluate fixloss checkpoints (nodiv + lamb0002, type + no-type)
+# nodiv: lamb=0, no -div flag
+# lamb0002: lamb=0.002, with -div flag
+
+VARIANTS=(
+    "kuairec_highest_individual"
+    "kuairec_highest_average"
+    "kuairec_first_individual"
+    "kuairec_first_average"
+)
+
+# SUFFIX|LAMB|LMD_CONSEC|USE_DIV (1=use -div flag, 0=don't)
+CONFIGS=(
+    "fixloss_nodiv|0|0|0"
+    "fixloss_lamb0002|0.002|0|1"
+)
+
+cd "$(dirname "$0")"
+
+get_latest_epoch() {
+    ls "${1}/"duorec-*.pth 2>/dev/null | sed 's/.*duorec-//;s/\.pth//' | sort -n | tail -1
+}
+
+for CONFIG in "${CONFIGS[@]}"; do
+    IFS='|' read -r SUFFIX LAMB LMD_CONSEC USE_DIV <<< "$CONFIG"
+
+    for VAR in "${VARIANTS[@]}"; do
+        echo "=============================================="
+        echo "Evaluating: ${SUFFIX} / ${VAR}"
+        echo "=============================================="
+
+        # ---- TYPE VERSION ----
+        RT_TYPE_DIR="./save_rt_type_${VAR}"
+        PT_TYPE_DIR="./save_pt_type_${SUFFIX}_${VAR}"
+        LATEST_PT_TYPE=$(get_latest_epoch "${PT_TYPE_DIR}/model")
+
+        if [ -n "$LATEST_PT_TYPE" ]; then
+            echo "[TYPE ${SUFFIX}] Evaluating epoch ${LATEST_PT_TYPE}..."
+            rm -f "${PT_TYPE_DIR}/test_result.txt"
+            DIV_FLAGS=""
+            [ "$USE_DIV" = "1" ] && DIV_FLAGS="-div -lamb ${LAMB} -lmd_consec ${LMD_CONSEC}"
+            CUDA_VISIBLE_DEVICES= python3 main_pt.py \
+                -tf ./KuaiRec_variants/${VAR}/train-v0.txt \
+                -vf ./KuaiRec_variants/${VAR}/valid-v0.txt \
+                -ef ./KuaiRec_variants/${VAR}/test-v0.txt \
+                -vn ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
+                -en ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
+                -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
+                -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
+                -m test -e ${LATEST_PT_TYPE} -b 64 \
+                ${DIV_FLAGS} -t_mode topk \
+                -start_epoch ${LATEST_PT_TYPE} -epoch_step 1 \
+                -i ${RT_TYPE_DIR} -o ${PT_TYPE_DIR} 2>&1 | tee "eval_fixloss_type_${SUFFIX}_test_${VAR}.log"
+            echo "[TYPE ${SUFFIX}] Done."
+        else
+            echo "[TYPE ${SUFFIX}] No checkpoint — skip"
+        fi
+
+        # ---- NO-TYPE VERSION ----
+        RT_NOTYPE_DIR="./save_rt_kuairec_${VAR#kuairec_}"
+        PT_NOTYPE_DIR="./save_pt_${SUFFIX}_${VAR}"
+        LATEST_PT_NOTYPE=$(get_latest_epoch "${PT_NOTYPE_DIR}/model")
+
+        if [ -n "$LATEST_PT_NOTYPE" ]; then
+            echo "[NO-TYPE ${SUFFIX}] Evaluating epoch ${LATEST_PT_NOTYPE}..."
+            rm -f "${PT_NOTYPE_DIR}/test_result.txt"
+            DIV_FLAGS=""
+            [ "$USE_DIV" = "1" ] && DIV_FLAGS="-div -lamb ${LAMB} -lmd_consec ${LMD_CONSEC}"
+            CUDA_VISIBLE_DEVICES= python3 main_pt.py \
+                -tf ./KuaiRec_variants/${VAR}/train-v0.txt \
+                -vf ./KuaiRec_variants/${VAR}/valid-v0.txt \
+                -ef ./KuaiRec_variants/${VAR}/test-v0.txt \
+                -vn ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
+                -en ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
+                -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
+                -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
+                -m test -e ${LATEST_PT_NOTYPE} -b 64 \
+                ${DIV_FLAGS} -t_mode topk \
+                -start_epoch ${LATEST_PT_NOTYPE} -epoch_step 1 \
+                -i ${RT_NOTYPE_DIR} -o ${PT_NOTYPE_DIR} 2>&1 | tee "eval_fixloss_${SUFFIX}_test_${VAR}.log"
+            echo "[NO-TYPE ${SUFFIX}] Done."
+        else
+            echo "[NO-TYPE ${SUFFIX}] No checkpoint — skip"
+        fi
+
+        echo ""
+    done
+done
+
+echo "############################################################"
+echo "EVALUATION COMPLETE!"
+echo "############################################################"
