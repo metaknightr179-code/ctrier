@@ -210,12 +210,11 @@ class TRIER_RT(nn.Module):
             nce_loss += self.lmd_sem * self.nce_fct(sem_nce_logits, sem_nce_labels)
 
         # Calculate regularization losses if enabled
+        # NOTE: gradients MUST flow through the beam generation (matches original TRIER) —
+        # Dis_reg/ME_reg regularize the RT model's generation diversity/exploration
         if self.reg:
-            with torch.no_grad():
-                dis_reg, me_reg = self.generate_step_by_step(input_session_ids, output)
-            dis_reg = dis_reg.detach()
-            me_reg = me_reg.detach()
-            
+            dis_reg, me_reg = self.generate_step_by_step(input_session_ids, output)
+
         return output, nce_loss, dis_reg, me_reg
 
 
