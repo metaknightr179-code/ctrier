@@ -75,8 +75,14 @@ for variant in "${VARIANTS[@]}"; do
             echo ""
             continue
         fi
-        echo "  Resuming from epoch ${EPOCHS_DONE}"
-        RESUME="-r"
+        # Only resume if the checkpoint for the last completed epoch actually exists
+        if [ -f "${rt_dir}/model/duorec-$((EPOCHS_DONE - 1)).pth" ]; then
+            echo "  Resuming from epoch ${EPOCHS_DONE}"
+            RESUME="-r"
+        else
+            echo "  Stale train_result.txt found (no checkpoint) - starting fresh"
+            rm -f "${rt_dir}/train_result.txt"
+        fi
     fi
 
     CUDA_VISIBLE_DEVICES=${GPU} python3 main_rt.py \
@@ -123,8 +129,14 @@ for config_line in "${CONFIGS[@]}"; do
                 echo ""
                 continue
             fi
-            echo "  Resuming from epoch ${EPOCHS_DONE}"
-            RESUME="-r"
+            # Only resume if the checkpoint for the last completed epoch actually exists
+            if [ -f "${pt_dir}/model/duorec-$((EPOCHS_DONE - 1)).pth" ]; then
+                echo "  Resuming from epoch ${EPOCHS_DONE}"
+                RESUME="-r"
+            else
+                echo "  Stale train_result.txt found (no checkpoint) - starting fresh"
+                rm -f "${pt_dir}/train_result.txt"
+            fi
         fi
 
         DIV_FLAGS=""
