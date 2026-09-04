@@ -75,8 +75,12 @@ class TRIER_PT(nn.Module):
         # Type embedding layer (RecFormer-style: learnable representation per item type/category)
         # Each item's representation = ID embedding + mean(type embeddings for its categories)
         # padding_idx=0 means items with no category get zero type embedding
+        # Can be disabled via -no_type flag (PT uses item ID embeddings only, no category info)
+        self.use_type = not getattr(args, 'no_type', False)
         self.n_types = getattr(args, 'n_cat', 31) + 1  # +1 for padding (0 = no type)
         self.type_embedding = nn.Embedding(self.n_types, self.hidden_size, padding_idx=0)
+        if not self.use_type:
+            print("[TRIER_PT] Type embeddings DISABLED (-no_type flag set)")
 
         # Buffer: maps item_id -> padded tensor of type/category IDs [n_items, max_types]
         # Initialized to all zeros (no types); set via set_item_types() after model creation
@@ -145,8 +149,10 @@ class TRIER_PT(nn.Module):
     # Output: [n_items, hidden_size] = item_embedding.weight + type_emb
     # --------------------------
     def combined_item_weight(self):
-        type_emb = self.get_type_embeddings(torch.arange(self.n_items, device=self.item_type_ids.device))
-        return self.item_embedding.weight + type_emb
+        if self.use_type:
+            type_emb = self.get_type_embeddings(torch.arange(self.n_items, device=self.item_type_ids.device))
+            return self.item_embedding.weight + type_emb
+        return self.item_embedding.weight
 
 
     # --------------------------
@@ -634,11 +640,12 @@ class TRIER_PT(nn.Module):
         # Get item embeddings
         item_emb = self.item_embedding(input_session_ids)
 
-        # Get type embeddings (RecFormer-style: add category type info to item representation)
-        type_emb = self.get_type_embeddings(input_session_ids)
-
         # Combine item, type, and position embeddings
-        input_emb = item_emb + type_emb + position_embedding
+        if self.use_type:
+            type_emb = self.get_type_embeddings(input_session_ids)
+            input_emb = item_emb + type_emb + position_embedding
+        else:
+            input_emb = item_emb + position_embedding
         input_emb = self.LayerNorm(input_emb)
         input_emb = self.dropout(input_emb)
         
