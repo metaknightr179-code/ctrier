@@ -146,7 +146,17 @@ for config_line in "${CONFIGS[@]}"; do
         fi
 
         DIV_FLAGS=""
-        [ "${lamb}" != "0" ] && DIV_FLAGS="-div -lamb ${lamb} -lmd_consec ${lmd_consec}"
+        if [ "${lamb}" != "0" ]; then
+            # -div invokes RT beam generation: require a real RT checkpoint,
+            # otherwise a random RT would silently corrupt training
+            latest_rt=$(ls "${rt_dir}/model/duorec-"*.pth 2>/dev/null | sort -t'-' -k2 -n | tail -1)
+            if [ -z "${latest_rt}" ]; then
+                echo "  ERROR: no RT checkpoint in ${rt_dir}/model/ - SKIP ${pt_dir}"
+                continue
+            fi
+            echo "  Using RT checkpoint: $(basename "${latest_rt}")"
+            DIV_FLAGS="-div -lamb ${lamb} -lmd_consec ${lmd_consec}"
+        fi
 
         CUDA_VISIBLE_DEVICES=${GPU} python3 main_pt.py \
             -tf ./KuaiRec_variants/${variant}/train-v0.txt \
@@ -205,7 +215,17 @@ for config_line in "${CONFIGS[@]}"; do
         fi
 
         DIV_FLAGS=""
-        [ "${lamb}" != "0" ] && DIV_FLAGS="-div -lamb ${lamb} -lmd_consec ${lmd_consec}"
+        if [ "${lamb}" != "0" ]; then
+            # -div invokes RT beam generation: require a real RT checkpoint,
+            # otherwise a random RT would silently corrupt training
+            latest_rt=$(ls "${rt_dir}/model/duorec-"*.pth 2>/dev/null | sort -t'-' -k2 -n | tail -1)
+            if [ -z "${latest_rt}" ]; then
+                echo "  ERROR: no RT checkpoint in ${rt_dir}/model/ - SKIP ${pt_dir}"
+                continue
+            fi
+            echo "  Using RT checkpoint: $(basename "${latest_rt}")"
+            DIV_FLAGS="-div -lamb ${lamb} -lmd_consec ${lmd_consec}"
+        fi
 
         CUDA_VISIBLE_DEVICES=${GPU} python3 main_pt.py \
             -tf ./KuaiRec_variants/${variant}/train-v0.txt \

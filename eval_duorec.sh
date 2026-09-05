@@ -28,13 +28,15 @@ mkdir -p "$STAGE_BASE"
 
 for variant in "${VARIANTS[@]}"; do
     PT_DIR="./save_duorec_${variant}"
-    RT_DIR="./save_rt_fix_${variant}"
     SMALL_DIR="./KuaiRec_small_eval/${variant}"
 
     if [ ! -d "$PT_DIR/model" ]; then echo "SKIP: missing $PT_DIR"; continue; fi
     LATEST=$(get_latest_epoch "${PT_DIR}/model")
     if [ -z "$LATEST" ]; then echo "SKIP: no checkpoint in $PT_DIR"; continue; fi
-    [ ! -d "${RT_DIR}/model" ] && RT_DIR=$(ls -d save_rt_fix_* 2>/dev/null | head -1)
+    # DuoRec eval never uses RT (topk, no -div): point -i at an isolated dummy
+    # dir so we never auto-load a partially-trained RT checkpoint.
+    RT_DIR="./rt_dummy_for_duorec"
+    mkdir -p "${RT_DIR}"
 
     # ------------------------------------------------------------------
     # 1. Big-matrix eval (writes test_result.txt directly in the ckpt dir)

@@ -64,13 +64,12 @@ for variant in "${VARIANTS[@]}"; do
         fi
     fi
 
-    # -i points at the fixed RT dir (loaded but NEVER used: no -div + topk eval);
-    # falls back to any save_rt_* dir if fix RT not present.
-    if [ ! -d "${rt_dir}/model" ]; then
-        rt_dir=$(ls -d save_rt_fix_* 2>/dev/null | head -1)
-        [ -z "$rt_dir" ] && rt_dir=$(ls -d save_rt_* 2>/dev/null | head -1)
-        echo "  (using RT dir: ${rt_dir} — loaded but unused by DuoRec)"
-    fi
+    # -i points at an isolated dummy dir so we NEVER accidentally load a
+    # partially-trained RT checkpoint from a parallel TRIER pipeline run.
+    # main_pt.py finds no checkpoint there -> warns -> random RT (never invoked:
+    # no -div + topk eval), which is exactly what DuoRec wants.
+    rt_dir="rt_dummy_for_duorec"
+    mkdir -p "${rt_dir}"
 
     CUDA_VISIBLE_DEVICES=${GPU} python3 main_pt.py \
         -tf ./KuaiRec_variants/${variant}/train-v0.txt \
