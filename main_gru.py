@@ -490,7 +490,7 @@ if __name__ == '__main__':
                 with torch.no_grad():
                     for batch in dataloader:
                         step += 1
-                        input_session_ids, targets, negatives, input_reverse_ids = batch
+                        input_session_ids, targets, negatives, input_reverse_ids, _ = batch
                         item_seq_len = (input_session_ids > 0).sum(-1).tolist()
                         if torch.cuda.is_available():
                             input_session_ids = input_session_ids.cuda()

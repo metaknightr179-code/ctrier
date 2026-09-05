@@ -242,8 +242,12 @@ class TestDataset(Dataset):
             target = 0
         
         # Create padded input tensor (LEFT-aligned / right-padded, official convention)
+        # IMPORTANT: truncate the forward sequence to max_seq_len (50), the SAME window
+        # used in training. Truncating to modified_max_seq_len (72) would feed test
+        # sequences through position embeddings 50-71 that were never trained
+        # (all KuaiRec histories exceed 50 items), corrupting the representations.
         input_session_ids = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
-        seq = seq[-self.modified_max_seq_len:]
+        seq = seq[-self.max_seq_len:]
         input_session_ids[:len(seq)] = torch.tensor(seq, dtype=torch.long)
 
         # Create reverse sequence (for RT model input)
@@ -267,5 +271,9 @@ class TestDataset(Dataset):
                 neg_items.append(neg)
         
         negatives = torch.tensor(neg_items[:99], dtype=torch.long)
-        
-        return input_session_ids, torch.tensor(target, dtype=torch.long), negatives, input_reverse_ids
+
+        # Retrospective target (session's FIRST item) for evaluating the RT model
+        # on its true task: given reversed context [sn..s2], predict s1.
+        retro_target = session[0] if len(session) >= 2 else 0
+
+        return input_session_ids, torch.tensor(target, dtype=torch.long), negatives, input_reverse_ids, torch.tensor(retro_target, dtype=torch.long)

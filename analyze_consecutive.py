@@ -38,7 +38,7 @@ if torch.cuda.is_available():
     item2vec = item2vec.cuda()
 
 # Load test dataset
-dataset = TestDataset('./Yelp/test-v0.txt', './Yelp/Yelp-random-sample_size=99-seed=4444.txt', 14588, 72)
+dataset = TestDataset('./Yelp/test-v0.txt', './Yelp/Yelp-random-sample_size=99-seed=4444.txt', 14588, 50, 72)
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=16, shuffle=False, num_workers=0)
 
 # Calculate consecutive similarity
@@ -47,7 +47,7 @@ total_rec_lists = []
 
 with torch.no_grad():
     for batch in dataloader:
-        input_session_ids, targets, negatives, input_reverse_ids = batch
+        input_session_ids, targets, negatives, input_reverse_ids, _ = batch
         
         if torch.cuda.is_available():
             input_session_ids = input_session_ids.cuda()

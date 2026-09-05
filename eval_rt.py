@@ -109,7 +109,7 @@ def evaluate_rt_checkpoint(model_path, test_file, neg_file, item_num, batch_size
     total_result = []
     with torch.no_grad():
         for batch in dataloader:
-            input_session_ids, targets, negatives, _ = batch
+            input_session_ids, targets, negatives, _, _ = batch
             input_session_ids = input_session_ids.to(device)
             targets = targets.to(device)
             

@@ -266,17 +266,18 @@ if __name__ == '__main__':
             with torch.no_grad():
                 for batch in dataloader:
                     step += 1
-                    input_session_ids, targets, negatives, _ = batch
+                    # RT is RETROSPECTIVE: evaluate on its true task
+                    # (reversed context [sn..s2] -> predict first item s1)
+                    input_session_ids, _, negatives, input_reverse_ids, retro_targets = batch
                     if torch.cuda.is_available():
-                        input_session_ids = input_session_ids.cuda()
-                        targets = targets.cuda()
-                        negatives = negatives.cuda()
-                    output = model.test_forward(input_session_ids)  # [batch_size, hidden_unit]
+                        input_reverse_ids = input_reverse_ids.cuda()
+                        retro_targets = retro_targets.cuda()
+                    output = model.test_forward(input_reverse_ids)  # [batch_size, hidden_unit]
                     output = torch.matmul(output, model.item_embedding.weight.T)  # [batch_size, item_num]
                     _, output_token = output.log_softmax(-1).topk(k=20, axis=-1)
                     # result = evaluate_function(output, targets, negatives)
                     # print(output_token.shape)
-                    result = evaluate_function_with_full(targets, output_token, cat_map=cate_map, cat_num=num_cat, item2vec=item2vec)
+                    result = evaluate_function_with_full(retro_targets, output_token, cat_map=cate_map, cat_num=num_cat, item2vec=item2vec)
                     total_result.extend(result)
             # print("step 1 done!")
             total_result_dict = metric_all(epoch, total_result)
@@ -339,16 +340,17 @@ if __name__ == '__main__':
             with torch.no_grad():
                 for batch in dataloader:
                     step += 1
-                    input_session_ids, targets, negatives, _ = batch
+                    # RT is RETROSPECTIVE: evaluate on its true task
+                    # (reversed context [sn..s2] -> predict first item s1)
+                    input_session_ids, _, negatives, input_reverse_ids, retro_targets = batch
                     if torch.cuda.is_available():
-                        input_session_ids = input_session_ids.cuda()
-                        targets = targets.cuda()
-                        negatives = negatives.cuda()
-                    output = model.test_forward(input_session_ids)  # [batch_size, hidden_unit]
+                        input_reverse_ids = input_reverse_ids.cuda()
+                        retro_targets = retro_targets.cuda()
+                    output = model.test_forward(input_reverse_ids)  # [batch_size, hidden_unit]
                     output = torch.matmul(output, model.item_embedding.weight.T)  # [batch_size, item_num]
                     _, output_token = output.log_softmax(-1).topk(k=20, axis=-1)
                     # 使用与valid一致的全集评测（_f后缀键），保证metric_all键匹配
-                    result = evaluate_function_with_full(targets, output_token, cat_map=cate_map, cat_num=num_cat, item2vec=item2vec)
+                    result = evaluate_function_with_full(retro_targets, output_token, cat_map=cate_map, cat_num=num_cat, item2vec=item2vec)
                     total_result.extend(result)
 
             total_result_dict = metric_all(epoch, total_result)

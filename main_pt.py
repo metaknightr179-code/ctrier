@@ -367,10 +367,7 @@ if __name__ == '__main__':
                 
                 # Backward pass: compute gradients
                 loss.backward()
-                
-                # Gradient clipping to prevent exploding gradients
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                
+
                 # Update model weights
                 optimizer.step()
                 
@@ -487,7 +484,7 @@ if __name__ == '__main__':
             with torch.no_grad():
                 for batch in dataloader:
                     step += 1
-                    input_session_ids, targets, negatives, input_reverse_ids = batch
+                    input_session_ids, targets, negatives, input_reverse_ids, _ = batch
                     
                     # Move data to GPU if available
                     if torch.cuda.is_available():
@@ -609,7 +606,7 @@ if __name__ == '__main__':
             with torch.no_grad():
                 for batch in dataloader:
                     step += 1
-                    input_session_ids, targets, negatives, input_reverse_ids = batch
+                    input_session_ids, targets, negatives, input_reverse_ids, _ = batch
                     
                     # Calculate sequence lengths
                     item_seq_len = (input_session_ids > 0).sum(-1).tolist()
