@@ -226,13 +226,12 @@ class TRIER_PT(nn.Module):
         # Pass through transformer encoder
         output = self.trm_encoder(input_emb, mask=src_mask, src_key_padding_mask=padding_mask)
         output = output.permute(1, 0, 2)  # [batch_size, seq_len, emb_size]
-        
-        # Clamp sequence length to avoid index errors
+
+        # RIGHT-padding convention (dataset places items at positions [0,len-1]);
+        # the most recent item is at index item_seq_len-1 (official TRIER gather).
         item_seq_len_clamped = torch.clamp(item_seq_len, min=1)
-        
-        # Get the last non-padding token's hidden state
         output = self.gather_indexes(output, item_seq_len_clamped - 1)  # [batch_size, emb_size]
-        
+
         return output
 
 

@@ -332,7 +332,7 @@ if __name__ == '__main__':
         while epoch < epochs:
             epoch += 1
             step = 0
-            loss_avg = 0          # Accumulated total loss
+            loss_avg = torch.tensor(0.0, device=args.device)  # Accumulated total loss (tensor so .item() works even if every step NaN-skips)
             loss_acc, loss_div, loss_nce = 0.0, 0.0, 0.0  # Individual loss components
             start_time = time.time()  # Track epoch time
             

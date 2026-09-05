@@ -79,7 +79,7 @@ class TrainRTDataset(Dataset):
         
         # Create padded input tensor (right-aligned)
         input_session_ids = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
-        input_session_ids[-len(seq):] = torch.tensor(seq, dtype=torch.long)
+        input_session_ids[:len(seq)] = torch.tensor(seq, dtype=torch.long)
         
         # Generate negative samples (99 random items not equal to target)
         negatives = torch.zeros(99, dtype=torch.long)
@@ -101,7 +101,7 @@ class TrainRTDataset(Dataset):
                     other_seq = other_rev[:-1]  # other session's reversed context (target excluded)
                     other_seq = other_seq[-self.max_seq_len:]
                     sem_aug_input_session_ids = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
-                    sem_aug_input_session_ids[-len(other_seq):] = torch.tensor(other_seq, dtype=torch.long)
+                    sem_aug_input_session_ids[:len(other_seq)] = torch.tensor(other_seq, dtype=torch.long)
 
         return input_session_ids, torch.tensor(target, dtype=torch.long), negatives, sem_aug_input_session_ids
 
@@ -161,7 +161,7 @@ class TrainPTDataset(Dataset):
         
         # Create padded input tensor (forward sequence)
         input_session_ids = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
-        input_session_ids[-len(seq):] = torch.tensor(seq, dtype=torch.long)
+        input_session_ids[:len(seq)] = torch.tensor(seq, dtype=torch.long)
         
         # Create reverse sequence (for RT model input)
         # RT is a RETROSPECTIVE model trained on REVERSED sequences: given [sn..s2], predict s1.
@@ -169,8 +169,8 @@ class TrainPTDataset(Dataset):
         input_reverse_ids = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
         if len(session) > 1:
             rev_seq = session[1:][::-1]            # [sn, ..., s2] in reversed time order
-            rev_seq = rev_seq[-self.max_seq_len:]  # keep items nearest the prediction point
-            input_reverse_ids[-len(rev_seq):] = torch.tensor(rev_seq, dtype=torch.long)
+            rev_seq = rev_seq[-self.max_seq_len:]  # keep tail (items adjacent to generation point, s2..)
+            input_reverse_ids[:len(rev_seq)] = torch.tensor(rev_seq, dtype=torch.long)
 
         # Generate negative samples
         negatives = torch.zeros(99, dtype=torch.long)
@@ -191,7 +191,7 @@ class TrainPTDataset(Dataset):
                     other_seq = other_session[:-1]
                     other_seq = other_seq[-self.max_seq_len:]
                     sem_aug_input_session_ids = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
-                    sem_aug_input_session_ids[-len(other_seq):] = torch.tensor(other_seq, dtype=torch.long)
+                    sem_aug_input_session_ids[:len(other_seq)] = torch.tensor(other_seq, dtype=torch.long)
 
         return input_session_ids, torch.tensor(target, dtype=torch.long), negatives, sem_aug_input_session_ids, input_reverse_ids
 
@@ -241,20 +241,20 @@ class TestDataset(Dataset):
             seq = session
             target = 0
         
-        # Create padded input tensor
+        # Create padded input tensor (LEFT-aligned / right-padded, official convention)
         input_session_ids = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
         seq = seq[-self.modified_max_seq_len:]
-        input_session_ids[-len(seq):] = torch.tensor(seq, dtype=torch.long)
-        
+        input_session_ids[:len(seq)] = torch.tensor(seq, dtype=torch.long)
+
         # Create reverse sequence (for RT model input)
         # Reversed semantics: [sn..s2] so the retrospective RT model generates leftward items
         input_reverse_ids = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
         if len(session) > 1:
             rev_seq = session[1:][::-1]            # [sn, ..., s2] in reversed time order
-            rev_seq = rev_seq[-self.max_seq_len:]  # keep items nearest the prediction point
-            input_reverse_ids[-len(rev_seq):] = torch.tensor(rev_seq, dtype=torch.long)
-        
-        # Get negative samples (from file or generate if not available)
+            rev_seq = rev_seq[-self.max_seq_len:]  # keep tail (items adjacent to generation point, s2..)
+            input_reverse_ids[:len(rev_seq)] = torch.tensor(rev_seq, dtype=torch.long)
+
+        # Generate negative samples (from file or generate if not available)
         if idx < len(self.negatives):
             neg_items = self.negatives[idx]
         else:
