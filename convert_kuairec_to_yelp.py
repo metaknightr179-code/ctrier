@@ -87,7 +87,9 @@ def convert_interactions(input_csv, output_train, output_valid, output_test,
         for row in reader:
             user_id = int(row['user_id'])
             video_id = int(row['video_id'])
-            timestamp = float(row['timestamp'])
+            # small_matrix.csv has rows with missing timestamp/time/date;
+            # fall back to 0.0 so they sort earliest within the user's sequence
+            timestamp = float(row['timestamp']) if row['timestamp'] else 0.0
             watch_ratio = float(row['watch_ratio']) if row['watch_ratio'] else 0.0
             play_duration = float(row['play_duration']) if row['play_duration'] else 0.0
             video_duration = float(row['video_duration']) if row['video_duration'] else 0.0

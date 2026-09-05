@@ -1,0 +1,49 @@
+# Small-matrix (canonical KuaiRec) evaluation results
+#
+# Protocol:
+#   - All models were TRAINED on big-matrix-derived data (KuaiRec_variants/<variant>/)
+#     and are evaluated here, WITHOUT retraining, on leave-last-out TEST splits built
+#     from KuaiRec small_matrix.csv via convert_kuairec_to_yelp.py
+#     (--interaction_file small_matrix.csv --min_watch_ratio 0.1, per-variant dedup /
+#     average-watch-ratio options). Splits: ./KuaiRec_small_eval/<variant>/.
+#   - 1411 test users; full ranking over 10728 items (raw video_id space, same as
+#     training); item vectors for ILD/CS = KuaiRec_variants/kuairec_vec.npy.
+#     recall@20_f / ndcg@20_f are the full-ranking (leave-last-out) metrics.
+#   - TRIER-PT: greedy inference with fixed retrospective RT (save_rt_fix_<variant>),
+#     invocation mirrors eval_greedy_fixrt.sh; -div/-lamb flags replicate each
+#     checkpoint's training config (nodiv: lamb=0 no div loss).
+#     Note: save_pt_fixrt_lamb0005 exists only for highest_individual / highest_average.
+#   - GRU4Rec: per-variant gru4rec_best.pth via gru4rec_pytorch.py --eval_only.
+#   - SASRec: shared sasrec_best.pth via sasrec_pytorch.py --eval_only (recall/MRR/NDCG);
+#     ILD@20/CS@20 from eval_sasrec_ild_cs_small.py (identical top-20 lists per variant).
+#   - Data note: 181,992 small_matrix rows have an empty timestamp (also empty
+#     time/date); the converter falls back to timestamp=0.0 so they sort earliest.
+#     Dedup strategy does not change the small-matrix item sets (no duplicate
+#     user-video pairs); individual vs average watch-ratio filtering differ only in
+#     the tie-broken ordering of equal-timestamp items (last-50 eval window identical).
+#   - Skipped: save_pt_notype_fixrt_* was NOT evaluated - it is a duplicate artifact
+#     (nested copies of the save_pt_fixrt_* checkpoints, identical md5), not a
+#     distinct model.
+#
+# model | variant | epoch | recall@20_f | ndcg@20_f | ILD@20 | CS@20
+
+trier_pt_fixrt_nodiv(lamb=0)	kuairec_highest_individual	epoch 500	0.0425	0.0142	1.3901	0.2159
+trier_pt_fixrt_nodiv(lamb=0)	kuairec_highest_average	epoch 500	0.0369	0.0109	1.4312	0.1987
+trier_pt_fixrt_nodiv(lamb=0)	kuairec_first_individual	epoch 500	0.0503	0.0163	1.3804	0.2330
+trier_pt_fixrt_nodiv(lamb=0)	kuairec_first_average	epoch 500	0.0326	0.0109	1.4244	0.2161
+trier_pt_fixrt_lamb0002(lamb=0.002)	kuairec_highest_individual	epoch 500	0.0319	0.0111	1.5102	0.1381
+trier_pt_fixrt_lamb0002(lamb=0.002)	kuairec_highest_average	epoch 500	0.0404	0.0123	1.4873	0.1463
+trier_pt_fixrt_lamb0002(lamb=0.002)	kuairec_first_individual	epoch 500	0.0475	0.0147	1.4733	0.1389
+trier_pt_fixrt_lamb0002(lamb=0.002)	kuairec_first_average	epoch 500	0.0354	0.0126	1.4874	0.1312
+trier_pt_fixrt_lamb0005(lamb=0.005)	kuairec_highest_individual	epoch 500	0.0333	0.0114	1.5828	0.1612
+trier_pt_fixrt_lamb0005(lamb=0.005)	kuairec_highest_average	epoch 315	0.0461	0.0153	1.4629	0.1726
+trier_pt_fixrt_lamb0005(lamb=0.005)	kuairec_first_individual	MISSING	-	-	-	-
+trier_pt_fixrt_lamb0005(lamb=0.005)	kuairec_first_average	MISSING	-	-	-	-
+gru4rec (best ckpt)	kuairec_highest_individual	best	0.1921	0.1028	1.4563	0.2116
+gru4rec (best ckpt)	kuairec_highest_average	best	0.1977	0.1086	1.4418	0.2316
+gru4rec (best ckpt)	kuairec_first_individual	best	0.2084	0.1021	1.4449	0.2175
+gru4rec (best ckpt)	kuairec_first_average	best	0.2041	0.1062	1.4584	0.2142
+sasrec (shared ckpt)	kuairec_highest_individual	best	0.1006	0.0403	1.5303	0.1030
+sasrec (shared ckpt)	kuairec_highest_average	best	0.1006	0.0403	1.5303	0.1030
+sasrec (shared ckpt)	kuairec_first_individual	best	0.1006	0.0403	1.5303	0.1030
+sasrec (shared ckpt)	kuairec_first_average	best	0.1006	0.0403	1.5303	0.1030
