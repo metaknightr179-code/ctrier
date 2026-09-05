@@ -217,7 +217,11 @@ class TRIER_PT(nn.Module):
         padding_mask = (input_session_ids == 0)
 
         # Causal mask: position i can only attend to positions <= i (original TRIER behavior)
-        src_mask = (1 - torch.tril(torch.ones(input_emb.shape[0], input_emb.shape[0], device=padding_mask.device))).bool()  # [seq_len, seq_len]
+        # Can be disabled via -no_mask flag (ablation: bidirectional encoder, old repo behavior)
+        if getattr(self.args, 'no_mask', False):
+            src_mask = None
+        else:
+            src_mask = (1 - torch.tril(torch.ones(input_emb.shape[0], input_emb.shape[0], device=padding_mask.device))).bool()  # [seq_len, seq_len]
 
         # Pass through transformer encoder
         output = self.trm_encoder(input_emb, mask=src_mask, src_key_padding_mask=padding_mask)

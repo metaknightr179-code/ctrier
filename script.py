@@ -71,6 +71,7 @@ def get_args():
     parser.add_argument('-start_epoch', type=int, default=1, help='评测时起始epoch（用于只评测部分epoch）')
     parser.add_argument('-epoch_step', type=int, default=1, help='评测时epoch步长（如设为10则每10个epoch评测一次）')
     parser.add_argument('-no_type', action='store_true', help='disable RecFormer-style type embeddings in PT (makes PT use item ID embeddings only)')
+    parser.add_argument('-no_mask', action='store_true', help='disable causal mask in PT encoder (ablation: bidirectional encoder)')
 
     args = parser.parse_args()
 
