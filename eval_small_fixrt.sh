@@ -75,9 +75,12 @@ for FAM in "${FAMILIES[@]}"; do
             LATEST=$(get_latest_epoch "${PT_DIR}/model")
             if [ -z "$LATEST" ]; then echo "SKIP: no checkpoint in $PT_DIR"; continue; fi
 
-            # div flag: div_loss was active in training for all lambda>0 configs
+            # div flag: div_loss was active in training for all lambda>0 configs.
+            # nodiv MUST pass -lamb 0 explicitly: argparse default lamb=0.5 would
+            # otherwise blend 50% diversity score at inference (calculate_score),
+            # making "nodiv greedy" secretly a lambda=0.5 run.
             if [ "$LAMB" == "0" ]; then
-                DIV_FLAG=""
+                DIV_FLAG="-lamb 0"
             else
                 DIV_FLAG="-div -lamb ${LAMB} -lmd_consec ${CONSEC}"
             fi

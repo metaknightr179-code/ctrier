@@ -1,71 +1,106 @@
 #!/bin/bash
 # =============================================================================
-# GREEDY-mode (lambda-aware) evaluation — the original TRIER inference protocol.
-# Uses the full generate_by_score path (RT augmentation + lamb blending),
-# NOT topk which bypasses it.
+# GREEDY-mode evaluation (original TRIER inference) on the BIG-matrix protocol.
+# Uses the full generate_by_score path: RT beam-search candidate generation +
+# lambda diversity blending. This is the TRIER mechanism in action.
 #
-# Evaluates:
-#   - new fixed-RT checkpoints: save_pt_fixrt_<cfg>_<var>   (RT: save_rt_fix_<var>)
-#   - old broken-RT checkpoints: save_pt_type_lamb0005_<var> (RT: save_rt_type_<var>)
+# For the pure-accuracy full-catalog ranking, use eval_topk_fixrt.sh.
+#
+# Full grid: 7 configs x 4 variants x 2 families (type / notype). Missing
+# checkpoints are skipped, so this is safe to run during training and re-run
+# later.
+#
+# IMPORTANT: nodiv passes "-lamb 0" explicitly. Argparse default lamb=0.5 would
+# otherwise blend 50% diversity score at inference (calculate_score), making a
+# "nodiv" run secretly lambda=0.5.
+#
+# Output (staging dir, symlinked model, never touches the checkpoint dir):
+#   big matrix -> <PT_DIR>/test_result.txt   (greedy; overwritten per run)
 # =============================================================================
-cd /Users/notrobin/Documents/trae_projects/trier
+cd "$(dirname "$0")"
 
-# PT_DIR|RT_DIR|LAMB|VARIANT
-TARGETS=(
-    "save_pt_fixrt_nodiv_kuairec_highest_individual|save_rt_fix_kuairec_highest_individual|0|kuairec_highest_individual"
-    "save_pt_fixrt_nodiv_kuairec_highest_average|save_rt_fix_kuairec_highest_average|0|kuairec_highest_average"
-    "save_pt_fixrt_nodiv_kuairec_first_individual|save_rt_fix_kuairec_first_individual|0|kuairec_first_individual"
-    "save_pt_fixrt_nodiv_kuairec_first_average|save_rt_fix_kuairec_first_average|0|kuairec_first_average"
-    "save_pt_fixrt_lamb0002_kuairec_highest_individual|save_rt_fix_kuairec_highest_individual|0.002|kuairec_highest_individual"
-    "save_pt_fixrt_lamb0002_kuairec_highest_average|save_rt_fix_kuairec_highest_average|0.002|kuairec_highest_average"
-    "save_pt_fixrt_lamb0002_kuairec_first_individual|save_rt_fix_kuairec_first_individual|0.002|kuairec_first_individual"
-    "save_pt_fixrt_lamb0002_kuairec_first_average|save_rt_fix_kuairec_first_average|0.002|kuairec_first_average"
-    "save_pt_fixrt_lamb0005_kuairec_highest_individual|save_rt_fix_kuairec_highest_individual|0.005|kuairec_highest_individual"
-    "save_pt_fixrt_lamb0005_kuairec_highest_average|save_rt_fix_kuairec_highest_average|0.005|kuairec_highest_average"
-    "save_pt_type_lamb0005_kuairec_highest_individual|save_rt_type_kuairec_highest_individual|0.005|kuairec_highest_individual"
-    "save_pt_type_lamb0005_kuairec_highest_average|save_rt_type_kuairec_highest_average|0.005|kuairec_highest_average"
-    "save_pt_type_lamb0005_kuairec_first_individual|save_rt_type_kuairec_first_individual|0.005|kuairec_first_individual"
-    "save_pt_type_lamb0005_kuairec_first_average|save_rt_type_kuairec_first_average|0.005|kuairec_first_average"
+VARIANTS=(
+    kuairec_highest_individual
+    kuairec_highest_average
+    kuairec_first_individual
+    kuairec_first_average
+)
+
+# SUFFIX|LAMB|CONSEC (nodiv -> lamb 0)
+CONFIGS=(
+    "nodiv|0|0"
+    "lamb0002|0.002|0"
+    "lamb0005|0.005|0"
+    "lamb0005_consec0001|0.005|0.001"
+    "lamb001|0.01|0"
+    "lamb005|0.05|0"
+    "lamb01|0.1|0"
+)
+
+# FAMILY|DIR_PREFIX|TYPE_FLAG
+FAMILIES=(
+    "type|save_pt_fixrt_|"
+    "notype|save_pt_notype_fixrt_|-no_type"
 )
 
 get_latest_epoch() {
     ls "${1}"/duorec-*.pth 2>/dev/null | sed 's/.*duorec-//;s/\.pth//' | sort -n | tail -1
 }
 
-for T in "${TARGETS[@]}"; do
-    IFS='|' read -r PT_DIR RT_DIR LAMB VAR <<< "$T"
+STAGE_BASE="./save_greedy_staging"
+mkdir -p "$STAGE_BASE"
 
-    if [ ! -d "$PT_DIR" ]; then echo "SKIP: missing $PT_DIR"; continue; fi
+for FAM in "${FAMILIES[@]}"; do
+    IFS='|' read -r FAM_NAME DIR_PREFIX TYPE_FLAG <<< "$FAM"
+    for CFG in "${CONFIGS[@]}"; do
+        IFS='|' read -r SUFFIX LAMB CONSEC <<< "$CFG"
+        for VAR in "${VARIANTS[@]}"; do
+            PT_DIR="./${DIR_PREFIX}${SUFFIX}_${VAR}"
+            RT_DIR="./save_rt_fix_${VAR}"
+            VAR_DIR="./KuaiRec_variants/${VAR}"
 
-    LATEST=$(get_latest_epoch "${PT_DIR}/model")
-    if [ -z "$LATEST" ]; then echo "SKIP: no checkpoint in $PT_DIR"; continue; fi
+            [ ! -d "$PT_DIR/model" ] && { echo "SKIP: missing $PT_DIR"; continue; }
+            [ ! -d "$RT_DIR/model" ] && { echo "SKIP: missing RT $RT_DIR (needed for greedy)"; continue; }
+            LATEST=$(get_latest_epoch "${PT_DIR}/model")
+            [ -z "$LATEST" ] && { echo "SKIP: no checkpoint in $PT_DIR"; continue; }
 
-    # div flag: div_loss was active in training for all lambda>0 configs
-    if [ "$LAMB" == "0" ]; then DIV_FLAG=""; else DIV_FLAG="-div -lamb ${LAMB}"; fi
+            # nodiv MUST be -lamb 0 explicitly (argparse default is 0.5)
+            if [ "$LAMB" == "0" ]; then
+                DIV_FLAG="-lamb 0"
+            else
+                DIV_FLAG="-div -lamb ${LAMB} -lmd_consec ${CONSEC}"
+            fi
 
-    TAG=$(echo "$PT_DIR" | sed 's|save_pt_||')
+            TAG="${FAM_NAME}_${SUFFIX}_${VAR}_big"
+            STAGE="${STAGE_BASE}/${TAG}"
+            rm -rf "$STAGE"; mkdir -p "$STAGE"
+            ln -s "$(cd "$PT_DIR/model" && pwd)" "$STAGE/model"
 
-    echo "=============================================="
-    echo "GREEDY eval: ${TAG} (epoch ${LATEST}, lamb=${LAMB})"
-    echo "=============================================="
+            echo "=============================================="
+            echo "GREEDY big-matrix [${TAG}] epoch ${LATEST} (lamb=${LAMB})"
+            echo "=============================================="
+            python3 main_pt.py \
+                -tf "${VAR_DIR}/train-v0.txt" \
+                -vf "${VAR_DIR}/valid-v0.txt" \
+                -ef "${VAR_DIR}/test-v0.txt" \
+                -vn "${VAR_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt" \
+                -en "${VAR_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt" \
+                -cat "${VAR_DIR}/kuairec_cate.txt" \
+                -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
+                -m test -e ${LATEST} -b 256 \
+                ${TYPE_FLAG} ${DIV_FLAG} -t_mode greedy \
+                -start_epoch ${LATEST} -epoch_step 1 \
+                -i "$RT_DIR" -o "$STAGE" 2>&1 | tail -3
 
-    # keep topk results (main_pt.py writes test_result.txt); back it up first
-    [ -f "${PT_DIR}/test_result.txt" ] && mv "${PT_DIR}/test_result.txt" "${PT_DIR}/test_result_topk.txt"
-    python3 main_pt.py \
-        -tf ./KuaiRec_variants/${VAR}/train-v0.txt \
-        -vf ./KuaiRec_variants/${VAR}/valid-v0.txt \
-        -ef ./KuaiRec_variants/${VAR}/test-v0.txt \
-        -vn ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
-        -en ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
-        -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
-        -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
-        -m test -e ${LATEST} -b 256 \
-        ${DIV_FLAG} -lmd_consec 0 -t_mode greedy \
-        -start_epoch ${LATEST} -epoch_step 1 \
-        -i ${RT_DIR} -o ${PT_DIR} 2>&1 | tee "eval_greedy_${TAG}.log"
-
-    echo "=== ${TAG} done ==="
-    echo ""
+            if [ -f "${STAGE}/test_result.txt" ]; then
+                cp "${STAGE}/test_result.txt" "${PT_DIR}/test_result.txt"
+                echo "    -> ${PT_DIR}/test_result.txt"
+            else
+                echo "    FAILED (no test_result.txt)"
+            fi
+            echo ""
+        done
+    done
 done
 
 echo "ALL GREEDY EVALS DONE"
