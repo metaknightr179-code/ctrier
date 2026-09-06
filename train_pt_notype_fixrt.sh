@@ -84,12 +84,13 @@ for config_line in "${CONFIGS[@]}"; do
                 echo ""
                 continue
             fi
-            if [ -f "${pt_dir}/model/duorec-$((EPOCHS_DONE - 1)).pth" ]; then
+            # main_pt.py -r loads duorec-<EPOCHS_DONE>.pth (one log line per epoch)
+            if [ -f "${pt_dir}/model/duorec-${EPOCHS_DONE}.pth" ]; then
                 echo "  Resuming from epoch ${EPOCHS_DONE}"
                 RESUME="-r"
             else
-                echo "  Stale train_result.txt found (no checkpoint) - starting fresh"
-                rm -f "${pt_dir}/train_result.txt"
+                echo "  ERROR: ${EPOCHS_DONE} epochs logged but model/duorec-${EPOCHS_DONE}.pth missing - abort (progress preserved)."
+                exit 1
             fi
         fi
 
