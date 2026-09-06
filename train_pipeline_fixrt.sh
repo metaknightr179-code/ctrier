@@ -29,7 +29,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 GPU=0
-MAX_EPOCHS=500
+MAX_EPOCHS=1000
 
 VARIANTS=(
     kuairec_highest_individual
@@ -55,7 +55,7 @@ echo "# Stage 1: ${#VARIANTS[@]} RT runs"
 echo "# Stage 2: $((${#CONFIGS[@]} * ${#VARIANTS[@]})) PT runs (with type embeddings)"
 echo "# Stage 3: $((${#CONFIGS[@]} * ${#VARIANTS[@]})) PT runs (without type embeddings)"
 echo "# Total PT runs: $((${#CONFIGS[@]} * ${#VARIANTS[@]} * 2))"
-echo "# Hyperparams: -b 256 -l 1e-3 -e ${MAX_EPOCHS} (original defaults)"
+echo "# Hyperparams: -b 256 -l 1e-3 -e ${MAX_EPOCHS} -early_stop patience=100 (original defaults)"
 echo "############################################################"
 echo ""
 
@@ -102,7 +102,7 @@ for variant in "${VARIANTS[@]}"; do
         -n 10728 -n_cat 31 -e ${MAX_EPOCHS} -b 256 -l 1e-3 \
         -reg \
         -t_mode topk \
-        -early_stop -patience 50 -min_delta 0.0001 \
+        -early_stop -patience 100 -min_delta 0.0001 \
         ${RESUME} \
         -o ${rt_dir} 2>&1 | tee "${rt_log}"
 
@@ -169,7 +169,7 @@ for config_line in "${CONFIGS[@]}"; do
             -m train -e ${MAX_EPOCHS} -b 256 -l 1e-3 \
             ${DIV_FLAGS} \
             -t_mode topk \
-            -early_stop -patience 50 -min_delta 0.0001 \
+            -early_stop -patience 100 -min_delta 0.0001 \
             ${RESUME} \
             -i ./${rt_dir} \
             -o ./${pt_dir} 2>&1 | tee "${pt_log}"
@@ -239,7 +239,7 @@ for config_line in "${CONFIGS[@]}"; do
             -no_type \
             ${DIV_FLAGS} \
             -t_mode topk \
-            -early_stop -patience 50 -min_delta 0.0001 \
+            -early_stop -patience 100 -min_delta 0.0001 \
             ${RESUME} \
             -i ./${rt_dir} \
             -o ./${pt_dir} 2>&1 | tee "${pt_log}"
