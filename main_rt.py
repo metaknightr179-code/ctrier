@@ -217,6 +217,10 @@ if __name__ == '__main__':
                     break
         
         fw.close()
+        # Completion marker for pipeline scripts: written only on normal exit
+        # (max epochs or early stop); absent if the process was killed.
+        with open(save_path + 'DONE', 'w') as f:
+            f.write('done\n')
 
     if mode == "valid":
         if resume:
