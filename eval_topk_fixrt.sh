@@ -48,19 +48,19 @@ STAGE_BASE="./save_topk_staging"
 mkdir -p "$STAGE_BASE"
 
 run_eval () {
-    # $1 = PT_DIR, $2 = latest epoch, $3 = test file, $4 = neg file, $5 = type flag,
-    # $6 = out result path, $7 = tag
-    local PT_DIR="$1" LATEST="$2" EF="$3" EN="$4" TYPE_FLAG="$5" OUT="$6" TAG="$7"
+    # $1=PT_DIR  $2=LATEST  $3=VAR_DIR  $4=test file  $5=neg file
+    # $6=TYPE_FLAG  $7=OUT path  $8=TAG
+    local PT_DIR="$1" LATEST="$2" VAR_DIR="$3" EF="$4" EN="$5" TYPE_FLAG="$6" OUT="$7" TAG="$8"
     local STAGE="${STAGE_BASE}/${TAG}"
     rm -rf "$STAGE"; mkdir -p "$STAGE"
     ln -s "$(cd "$PT_DIR/model" && pwd)" "$STAGE/model"
 
     echo "--- TOPK [${TAG}] $(basename "$PT_DIR") epoch ${LATEST}"
     python3 main_pt.py \
-        -tf ./KuaiRec_variants/kuairec_highest_individual/train-v0.txt \
-        -vf ./KuaiRec_variants/kuairec_highest_individual/valid-v0.txt \
+        -tf "${VAR_DIR}/train-v0.txt" \
+        -vf "${VAR_DIR}/valid-v0.txt" \
         -ef "$EF" -vn "$EN" -en "$EN" \
-        -cat ./KuaiRec_variants/kuairec_highest_individual/kuairec_cate.txt \
+        -cat "${VAR_DIR}/kuairec_cate.txt" \
         -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
         -m test -e ${LATEST} -b 256 \
         ${TYPE_FLAG} -t_mode topk \
