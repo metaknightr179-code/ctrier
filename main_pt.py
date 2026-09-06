@@ -493,19 +493,27 @@ if __name__ == '__main__':
                         negatives = negatives.cuda()
                         input_reverse_ids = input_reverse_ids.cuda()
                     
+                    # Build seen-item mask: prevents already-seen items from
+                    # occupying top-k slots (matches SASRec's eval protocol).
+                    seen_mask = torch.zeros(input_session_ids.shape[0], model.n_items,
+                                           dtype=torch.bool, device=input_session_ids.device)
+                    seen_mask.scatter_(1, input_session_ids.clamp(min=0), True)
+
                     # Generate recommendations using specified mode
                     if args.t_mode == "topk":
                         # Fast top-k generation mode
                         output = model.test_forward(input_session_ids, input_reverse_ids, rt_model, False)
                         output = torch.matmul(output, model.combined_item_weight().T)  # [batch_size, item_num]
+                        output = output.masked_fill(seen_mask, float('-inf'))
                         _, rec_list = output.log_softmax(-1).topk(k=20, axis=-1)
                     elif args.t_mode == "greedy":
-                        # Step-by-step greedy generation mode
+                        # Step-by-step greedy generation mode (masking handled inside generate_by_score)
                         output, rec_list = model.test_forward(input_session_ids, input_reverse_ids, rt_model, True)
                     else:
                         # Use encoder-only generation (no decoder)
                         output = model.test_forward(input_session_ids)  # [batch_size, hidden_unit]
                         output = torch.matmul(output, model.combined_item_weight().T)  # [batch_size, item_num]
+                        output = output.masked_fill(seen_mask, float('-inf'))
                         _, rec_list = output.log_softmax(-1).topk(k=20, axis=-1)
                     
                     # Evaluate recommendations (compute all metrics)

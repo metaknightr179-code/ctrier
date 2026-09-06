@@ -301,6 +301,15 @@ class TRIER_PT(nn.Module):
         mask = torch.ones(batch_size, self.n_items, device=device, requires_grad=False)
         mask[:, 0] = self.inf  # Mask padding token
         mask_greedy = mask.clone()
+
+        # Mask out items already seen in the input sequence during eval only
+        # (matches SASRec eval protocol; not applied during training to preserve
+        # original TRIER training dynamics)
+        if test:
+            seen_mask = torch.zeros(batch_size, self.n_items, device=device, dtype=torch.bool)
+            seen_mask.scatter_(1, input_session_ids.clamp(min=0), True)
+            mask[seen_mask] = self.inf
+            mask_greedy[seen_mask] = self.inf
         
         # Initial hidden state
         H_input = output.clone()
