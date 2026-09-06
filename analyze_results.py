@@ -127,24 +127,37 @@ def collect_all_results(proto_filter=None):
     rows = []
 
     # ---- TRIER / DuoRec dict-literal result files ----
+    # Filenames:
+    #   test_result.txt             big matrix;  duorec=topk, TRIER dirs=greedy
+    #   test_result_small.txt       small matrix; duorec=topk, TRIER dirs=greedy
+    #   test_result_topk.txt        big matrix;  topk full-catalog ranking
+    #   test_result_topk_small.txt  small matrix; topk full-catalog ranking
     for path in sorted(glob.glob(os.path.join(SCRIPT_DIR, "save_*", "test_result*.txt"))):
         dirname = os.path.basename(os.path.dirname(path))
         basename = os.path.basename(path)
-        # only canonical filenames (ignore test_result_topk.txt, test_result_500.txt, etc.)
-        if basename not in ("test_result.txt", "test_result_small.txt"):
-            continue
-        proto = "small" if basename == "test_result_small.txt" else "big"
+        if basename == "test_result.txt":
+            proto, fname_infer = "big", None
+        elif basename == "test_result_small.txt":
+            proto, fname_infer = "small", None
+        elif basename == "test_result_topk.txt":
+            proto, fname_infer = "big", "topk"
+        elif basename == "test_result_topk_small.txt":
+            proto, fname_infer = "small", "topk"
+        else:
+            continue  # ignore test_result_500.txt etc.
         if proto_filter and proto != proto_filter:
             continue
         parsed = split_dir_name(dirname)
         if parsed is None:
             continue
         family, config, variant = parsed
+        # inference mode: explicit from filename, else duorec is topk, TRIER greedy
+        infer = fname_infer or ("topk" if family == "duorec" else "greedy")
         data = parse_dict_result(path)
         if data is None:
             continue
         rows.append({"family": family, "config": config, "variant": variant,
-                     "proto": proto, "data": data})
+                     "proto": proto, "infer": infer, "data": data})
 
     # ---- Baselines (key:value text files) ----
     for path in sorted(glob.glob(os.path.join(SCRIPT_DIR, "baseline_results_*", "*_results*.txt"))):
@@ -164,7 +177,7 @@ def collect_all_results(proto_filter=None):
         if data is None:
             continue
         rows.append({"family": "baseline", "config": model, "variant": variant,
-                     "proto": proto, "data": data})
+                     "proto": proto, "infer": "topk", "data": data})
 
     return rows
 
@@ -240,7 +253,7 @@ def print_console_table(rows, proto):
 
     cols = [("R@10", "recall@10"), ("R@20", "recall@20"), ("N@10", "ndcg@10"),
             ("ILD@10", "ILD@10"), ("CS@10", "CS@10"), ("CC@10", "CC@10")]
-    header = f"{'Model':<26} {'Variant':<22} " + " ".join(f"{c[0]:>8}" for c in cols)
+    header = f"{'Model':<24} {'Infer':<7} {'Variant':<20} " + " ".join(f"{c[0]:>8}" for c in cols)
     print("\n" + "=" * len(header))
     print(f"{proto.upper()}-MATRIX PROTOCOL")
     print("=" * len(header))
@@ -253,7 +266,7 @@ def print_console_table(rows, proto):
             v = get_metric(r["data"], m)
             vals.append(f"{v:8.4f}" if v is not None else f"{'--':>8}")
         var_short = r["variant"].replace("kuairec_", "")
-        print(f"{label:<26} {var_short:<22} " + " ".join(vals))
+        print(f"{label:<24} {r.get('infer','?'):<7} {var_short:<20} " + " ".join(vals))
 
 
 # =============================================================================
@@ -319,9 +332,11 @@ def write_latex(rows, path):
         lines.append(" & " + " & ".join(c[0] for c in cols * len(VARIANTS)) + r" \\")
         lines.append(r"\midrule")
 
-        for (fam, cfg), var_data in models.items():
+        for (fam, cfg, infer), var_data in models.items():
             dummy = {"family": fam, "config": cfg}
             row = model_label(dummy)
+            if fam not in ("baseline", "duorec"):
+                row += " (" + infer + ")"
             for vk, _ in VARIANTS:
                 data = var_data.get(vk)
                 for _, m in cols:
