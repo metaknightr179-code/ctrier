@@ -39,6 +39,7 @@ CONFIGS=(
     "nodiv|nodiv|"
     "lamb0002|lamb0002|-div -lamb 0.002"
     "lamb0005|lamb0005|-div -lamb 0.005"
+    "lamb0005_consec0001|lamb0005_consec0001|-div -lamb 0.005 -lmd_consec 0.001"
     "lamb001|lamb001|-div -lamb 0.01"
     "lamb005|lamb005|-div -lamb 0.05"
     "lamb01|lamb01|-div -lamb 0.1"
@@ -46,7 +47,7 @@ CONFIGS=(
 
 echo "############################################################"
 echo "# Dense multi-position supervision PT training, GPU ${GPU}"
-echo "# Configs: nodiv, lamb0002, lamb0005, lamb001, lamb005, lamb01"
+echo "# Configs: nodiv, lamb0002, lamb0005, lamb0005_consec0001, lamb001, lamb005, lamb01"
 echo "# Families: type, notype"
 echo "# Hyperparams: -b 256 -l 1e-3 -e ${MAX_EPOCHS} -early_stop patience=100"
 echo "############################################################"
