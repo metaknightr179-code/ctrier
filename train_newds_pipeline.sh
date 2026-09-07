@@ -42,6 +42,16 @@ CONFIGS=(
 RT_OUT="save_rt_fix_${DS}"
 export CUDA_VISIBLE_DEVICES=${GPU}
 
+# ---------------- Guard: verify data files exist before touching the GPU ----------------
+for f in "${DIR}/train-v0.txt" "${DIR}/valid-v0.txt" "${DIR}/test-v0.txt" \
+         "${DIR}/${CATE}" "${DIR}/${VEC}" "${DIR}/${NEG}"; do
+  if [ ! -f "$f" ]; then
+    echo "ERROR: missing data file $f - transfer the dataset first, aborting (no training started)"
+    exit 1
+  fi
+done
+echo "[Guard] all data files present for ${DS}"
+
 # ---------------- Stage 1: RT (retrospective) ----------------
 lines=$(wc -l < "${RT_OUT}/train_result.txt" 2>/dev/null); lines=${lines:-0}
 if [ -f "${RT_OUT}/DONE" ] || [ "$lines" -ge 1000 ]; then
