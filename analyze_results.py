@@ -143,6 +143,14 @@ def collect_all_results(proto_filter=None):
             proto, fname_infer = "big", "topk"
         elif basename == "test_result_topk_small.txt":
             proto, fname_infer = "small", "topk"
+        elif basename.startswith("test_result_greedy_small_bw"):
+            # beam-sweep small: test_result_greedy_small_bw10_k10.txt etc.
+            proto = "small"
+            fname_infer = basename.replace("test_result_greedy_small_", "").replace(".txt", "")
+        elif basename.startswith("test_result_greedy_bw"):
+            # beam-sweep big: test_result_greedy_bw10_k10.txt etc.
+            proto = "big"
+            fname_infer = basename.replace("test_result_greedy_", "").replace(".txt", "")
         else:
             continue  # ignore test_result_500.txt etc.
         if proto_filter and proto != proto_filter:
@@ -152,6 +160,7 @@ def collect_all_results(proto_filter=None):
             continue
         family, config, variant = parsed
         # inference mode: explicit from filename, else duorec is topk, TRIER greedy
+        # beam-sweep files carry their beam label (e.g. "bw10_k10") as infer
         infer = fname_infer or ("topk" if family == "duorec" else "greedy")
         data = parse_dict_result(path)
         if data is None:
