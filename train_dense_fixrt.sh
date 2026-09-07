@@ -6,10 +6,12 @@
 # (predict next item at each step). This matches GRU4Rec's BPTT training and
 # gives ~50x more gradient signal per session.
 #
-# Only trains nodiv config (pure accuracy) for both type and notype families,
-# on all 4 variants. Reuses existing RT checkpoints (RT has no dense mode).
+# Configs: nodiv (pure accuracy) + lamb0002_consec (diversity + consec loss)
+# Families: type + notype
+# Variants: all 4 KuaiRec variants
+# Reuses existing RT checkpoints (RT has no dense mode).
 #
-# Checkpoint dirs use save_pt_dense_ prefix to avoid overwriting.
+# Checkpoint dirs use save_pt_dense_ / save_pt_notype_dense_ prefix.
 #
 # Usage: nohup bash train_dense_fixrt.sh <GPU_ID> > train_dense.log 2>&1 &
 # =============================================================================
@@ -32,9 +34,16 @@ FAMILIES=(
     "notype|save_pt_notype_dense_|-no_type"
 )
 
+# CONFIG_NAME|DIR_SUFFIX|EXTRA_FLAGS
+CONFIGS=(
+    "nodiv|nodiv|"
+    "lamb0002_consec|lamb0002_consec|-div -lamb 0.002"
+)
+
 echo "############################################################"
 echo "# Dense multi-position supervision PT training, GPU ${GPU}"
-echo "# Config: nodiv only (pure accuracy comparison)"
+echo "# Configs: nodiv, lamb0002_consec"
+echo "# Families: type, notype"
 echo "# Hyperparams: -b 256 -l 1e-3 -e ${MAX_EPOCHS} -early_stop patience=100"
 echo "############################################################"
 echo ""
@@ -70,52 +79,55 @@ fi
 
 for FAM in "${FAMILIES[@]}"; do
     IFS='|' read -r FAM_NAME DIR_PREFIX TYPE_FLAG <<< "$FAM"
-    for VAR in "${VARIANTS[@]}"; do
-        pt_dir="${DIR_PREFIX}nodiv_${VAR}"
-        pt_log="pt_dense_nodiv_${FAM_NAME}_${VAR}.log"
-        rt_dir="save_rt_fix_${VAR}"
-        VAR_DIR="./KuaiRec_variants/${VAR}"
+    for CFG in "${CONFIGS[@]}"; do
+        IFS='|' read -r CFG_NAME CFG_SUFFIX CFG_FLAGS <<< "$CFG"
+        for VAR in "${VARIANTS[@]}"; do
+            pt_dir="${DIR_PREFIX}${CFG_SUFFIX}_${VAR}"
+            pt_log="pt_dense_${CFG_SUFFIX}_${FAM_NAME}_${VAR}.log"
+            rt_dir="save_rt_fix_${VAR}"
 
-        echo "============================================================"
-        echo "PT Dense Training [${FAM_NAME}]: nodiv / ${VAR} -> ${pt_dir}"
-        echo "============================================================"
+            echo "============================================================"
+            echo "PT Dense Training [${FAM_NAME}]: ${CFG_NAME} / ${VAR} -> ${pt_dir}"
+            echo "============================================================"
 
-        RESUME=""
-        if [ -f "${pt_dir}/train_result.txt" ]; then
-            EPOCHS_DONE=$(wc -l < "${pt_dir}/train_result.txt")
-            if [ "$EPOCHS_DONE" -ge "$MAX_EPOCHS" ]; then
-                echo "  Already complete (${EPOCHS_DONE} epochs) - skip"
-                echo ""
-                continue
+            RESUME=""
+            if [ -f "${pt_dir}/train_result.txt" ]; then
+                EPOCHS_DONE=$(wc -l < "${pt_dir}/train_result.txt")
+                if [ "$EPOCHS_DONE" -ge "$MAX_EPOCHS" ]; then
+                    echo "  Already complete (${EPOCHS_DONE} epochs) - skip"
+                    echo ""
+                    continue
+                fi
+                if [ -f "${pt_dir}/model/duorec-${EPOCHS_DONE}.pth" ]; then
+                    echo "  Resuming from epoch ${EPOCHS_DONE}"
+                    RESUME="-r"
+                else
+                    echo "  ERROR: ${EPOCHS_DONE} epochs logged but checkpoint missing - abort."
+                    exit 1
+                fi
             fi
-            if [ -f "${pt_dir}/model/duorec-${EPOCHS_DONE}.pth" ]; then
-                echo "  Resuming from epoch ${EPOCHS_DONE}"
-                RESUME="-r"
-            else
-                echo "  ERROR: ${EPOCHS_DONE} epochs logged but checkpoint missing - abort."
-                exit 1
-            fi
-        fi
 
-        CUDA_VISIBLE_DEVICES=${GPU} python3 main_pt.py \
-            -tf ./KuaiRec_variants/${VAR}/train-v0.txt \
-            -vf ./KuaiRec_variants/${VAR}/valid-v0.txt \
-            -ef ./KuaiRec_variants/${VAR}/test-v0.txt \
-            -vn ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
-            -en ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
-            -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
-            -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
-            -m train -e ${MAX_EPOCHS} -b 256 -l 1e-3 \
-            -dense \
-            -t_mode topk \
-            -early_stop -patience 100 -min_delta 0.0001 \
-            ${RESUME} \
-            ${TYPE_FLAG} \
-            -i ./${rt_dir} \
-            -o ./${pt_dir} 2>&1 | tee "${pt_log}"
+            CUDA_VISIBLE_DEVICES=${GPU} python3 main_pt.py \
+                -tf ./KuaiRec_variants/${VAR}/train-v0.txt \
+                -vf ./KuaiRec_variants/${VAR}/valid-v0.txt \
+                -ef ./KuaiRec_variants/${VAR}/test-v0.txt \
+                -vn ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
+                -en ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
+                -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
+                -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
+                -m train -e ${MAX_EPOCHS} -b 256 -l 1e-3 \
+                -dense \
+                -t_mode topk \
+                -early_stop -patience 100 -min_delta 0.0001 \
+                ${RESUME} \
+                ${TYPE_FLAG} \
+                ${CFG_FLAGS} \
+                -i ./${rt_dir} \
+                -o ./${pt_dir} 2>&1 | tee "${pt_log}"
 
-        echo "  PT Dense [${FAM_NAME}] done: nodiv / ${VAR}"
-        echo ""
+            echo "  PT Dense [${FAM_NAME}] done: ${CFG_NAME} / ${VAR}"
+            echo ""
+        done
     done
 done
 
