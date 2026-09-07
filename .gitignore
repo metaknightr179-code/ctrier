@@ -33,15 +33,12 @@ runs/
 tensorboard_log/
 events.out.tfevents*
 
-# Datasets
+# Datasets: raw downloads stay ignored (files >100MB);
+# converted training data (KuaiRec_variants, ML1M, KuaiRand1K, MicroLens) is tracked
 Yelp/
 KuaiRec/
-KuaiRec_variants/
 data/
 datasets/
-ML1M/
-KuaiRand1K/
-MicroLens/
 
 # Baseline results and converted data (large files)
 baseline_results*/
@@ -80,6 +77,12 @@ key2*
 *.zip
 *.tar.gz
 *.tar
+
+# ...except the small category-vector files used by training (tracked intentionally)
+!KuaiRec_variants/kuairec_vec.npy
+!ML1M/ml1m_vec.npy
+!KuaiRand1K/kuairand_vec.npy
+!MicroLens/microlens_vec.npy
 
 # Python cache
 __pycache__/
