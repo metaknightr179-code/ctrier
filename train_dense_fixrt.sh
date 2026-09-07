@@ -37,12 +37,16 @@ FAMILIES=(
 # CONFIG_NAME|DIR_SUFFIX|EXTRA_FLAGS
 CONFIGS=(
     "nodiv|nodiv|"
-    "lamb0002_consec|lamb0002_consec|-div -lamb 0.002"
+    "lamb0002|lamb0002|-div -lamb 0.002"
+    "lamb0005|lamb0005|-div -lamb 0.005"
+    "lamb001|lamb001|-div -lamb 0.01"
+    "lamb005|lamb005|-div -lamb 0.05"
+    "lamb01|lamb01|-div -lamb 0.1"
 )
 
 echo "############################################################"
 echo "# Dense multi-position supervision PT training, GPU ${GPU}"
-echo "# Configs: nodiv, lamb0002_consec"
+echo "# Configs: nodiv, lamb0002, lamb0005, lamb001, lamb005, lamb01"
 echo "# Families: type, notype"
 echo "# Hyperparams: -b 256 -l 1e-3 -e ${MAX_EPOCHS} -early_stop patience=100"
 echo "############################################################"
