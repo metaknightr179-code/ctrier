@@ -39,6 +39,9 @@ KuaiRec/
 KuaiRec_variants/
 data/
 datasets/
+ML1M/
+KuaiRand1K/
+MicroLens/
 
 # Baseline results and converted data (large files)
 baseline_results*/
