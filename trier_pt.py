@@ -209,7 +209,7 @@ class TRIER_PT(nn.Module):
     # Input: Session IDs, sequence lengths
     # Output: Final hidden state of the sequence (for prediction)
     # --------------------------
-    def forward(self, input_session_ids, item_seq_len):
+    def forward(self, input_session_ids, item_seq_len, dense=False):
         # Get item embeddings with position encoding
         input_emb = self.embedding(input_session_ids)
 
@@ -226,6 +226,10 @@ class TRIER_PT(nn.Module):
         # Pass through transformer encoder
         output = self.trm_encoder(input_emb, mask=src_mask, src_key_padding_mask=padding_mask)
         output = output.permute(1, 0, 2)  # [batch_size, seq_len, emb_size]
+
+        # Dense mode: return all positions for multi-position CE loss
+        if dense:
+            return output  # [batch_size, seq_len, emb_size]
 
         # RIGHT-padding convention (dataset places items at positions [0,len-1]);
         # the most recent item is at index item_seq_len-1 (official TRIER gather).
@@ -244,9 +248,9 @@ class TRIER_PT(nn.Module):
     def train_forward(self, input_session_ids, sem_aug_input_session_ids, input_reverse_ids, rt_model, item2vec):
         # Calculate sequence lengths
         item_seq_len = (input_session_ids > 0).sum(-1)  # [batch_size]
-        
-        # Get encoder output
-        output = self.forward(input_session_ids, item_seq_len)
+
+        # Get encoder output (dense=True returns all positions for dense CE)
+        output = self.forward(input_session_ids, item_seq_len, dense=getattr(self.args, 'dense', False))
         
         # Initialize loss components
         div_loss, nce_loss, consec_loss = 0, 0, 0
@@ -487,20 +491,26 @@ class TRIER_PT(nn.Module):
     # Input: Encoder output, target items, NCE loss, diversity loss, consecutive similarity loss
     # Output: Total loss, main reconstruction loss
     # --------------------------
-    def rec_loss(self, output, targets, nce_loss, div_loss, consec_loss=0):
-        # Convert hidden state to item logits (combined item+type weights)
-        output = torch.matmul(output, self.combined_item_weight().T)  # [batch_size, item_num]
-        
-        # Prepare targets for gather operation
-        targets = targets.unsqueeze(-1)  # [batch_size, 1]
-        
-        # Cross-entropy loss: negative log probability of target item
-        rec_loss = -output.log_softmax(dim=-1).gather(dim=-1, index=targets).squeeze(-1)
-        main_loss = rec_loss.mean()
-        
+    def rec_loss(self, output, targets, nce_loss, div_loss, consec_loss=0, dense_targets=None):
+        if dense_targets is not None:
+            # Dense multi-position CE: output is [batch, seq_len, hidden], compute logits at every position
+            logits = torch.matmul(output, self.combined_item_weight().T)  # [batch, seq_len, item_num]
+            # Mask: only compute loss where both input and target are non-padding
+            mask = (dense_targets > 0).float()  # [batch, seq_len]
+            # CE at each position
+            ce = -logits.log_softmax(dim=-1).gather(dim=-1, index=dense_targets.unsqueeze(-1)).squeeze(-1)  # [batch, seq_len]
+            rec_loss = (ce * mask).sum() / mask.sum().clamp(min=1)  # mean over valid positions
+            main_loss = rec_loss
+        else:
+            # Original last-position CE
+            output = torch.matmul(output, self.combined_item_weight().T)  # [batch_size, item_num]
+            targets = targets.unsqueeze(-1)  # [batch_size, 1]
+            rec_loss = -output.log_softmax(dim=-1).gather(dim=-1, index=targets).squeeze(-1)
+            main_loss = rec_loss.mean()
+
         # Total loss = reconstruction + NCE + diversity + consecutive similarity
         loss = main_loss + nce_loss + div_loss + self.lmd_consec * consec_loss
-        
+
         return loss, main_loss
 
 

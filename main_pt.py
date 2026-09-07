@@ -342,8 +342,8 @@ if __name__ == '__main__':
                 step += 1
                 optimizer.zero_grad()  # Reset gradients
                 
-                # Unpack batch data
-                input_session_ids, targets, negatives, sem_aug_input_session_ids, input_reverse_ids = batch
+                # Unpack batch data (6 fields: includes dense_targets when -dense flag is set)
+                input_session_ids, targets, negatives, sem_aug_input_session_ids, input_reverse_ids, dense_targets = batch
                 
                 # Move data to GPU if available
                 if torch.cuda.is_available():
@@ -352,13 +352,16 @@ if __name__ == '__main__':
                     negatives = negatives.cuda()
                     sem_aug_input_session_ids = sem_aug_input_session_ids.cuda()
                     input_reverse_ids = input_reverse_ids.cuda()
-                
+                    dense_targets = dense_targets.cuda()
+
                 # Forward pass: get model outputs and loss components
                 output, nce_loss, div_loss, consec_loss = model.train_forward(input_session_ids, sem_aug_input_session_ids,
                                             input_reverse_ids, rt_model, item2vec)
-                
+
                 # Calculate total loss (reconstruction + NCE + diversity + consecutive similarity)
-                loss, main_loss = model.rec_loss(output, targets, nce_loss, div_loss, consec_loss)
+                # Pass dense_targets only when -dense flag is active
+                dt = dense_targets if getattr(args, 'dense', False) else None
+                loss, main_loss = model.rec_loss(output, targets, nce_loss, div_loss, consec_loss, dense_targets=dt)
                 
                 # Skip batch if loss is NaN or Inf (numerical instability)
                 if torch.isnan(loss) or torch.isinf(loss):

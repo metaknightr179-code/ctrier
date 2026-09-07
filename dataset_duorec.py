@@ -147,7 +147,7 @@ class TrainPTDataset(Dataset):
     def __getitem__(self, idx):
         """Get single training sample"""
         session = self.data[idx]
-        
+
         # Split session into sequence and target
         if len(session) >= 2:
             seq = session[:-1]
@@ -155,14 +155,24 @@ class TrainPTDataset(Dataset):
         else:
             seq = session
             target = 0
-        
+
         # Truncate sequence to max length
         seq = seq[-self.max_seq_len:]
-        
+
+        # Dense targets: shifted sequence (predict next item at every position)
+        # input: [s1, s2, ..., s_{n-1}], dense_targets: [s2, s3, ..., s_n]
+        # padded to modified_max_seq_len, 0 = padding (ignored in loss via mask)
+        dense_targets = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
+        if len(session) >= 2:
+            # The next-item targets aligned to input positions
+            # seq = session[:-1][-max_seq_len:] -> targets = session[1:][-max_seq_len:]
+            shifted = session[1:][-self.max_seq_len:]
+            dense_targets[:len(shifted)] = torch.tensor(shifted, dtype=torch.long)
+
         # Create padded input tensor (forward sequence)
         input_session_ids = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
         input_session_ids[:len(seq)] = torch.tensor(seq, dtype=torch.long)
-        
+
         # Create reverse sequence (for RT model input)
         # RT is a RETROSPECTIVE model trained on REVERSED sequences: given [sn..s2], predict s1.
         # Feeding reversed(session[1:]) lets RT naturally continue generating leftward (past) items.
@@ -193,7 +203,7 @@ class TrainPTDataset(Dataset):
                     sem_aug_input_session_ids = torch.zeros(self.modified_max_seq_len, dtype=torch.long)
                     sem_aug_input_session_ids[:len(other_seq)] = torch.tensor(other_seq, dtype=torch.long)
 
-        return input_session_ids, torch.tensor(target, dtype=torch.long), negatives, sem_aug_input_session_ids, input_reverse_ids
+        return input_session_ids, torch.tensor(target, dtype=torch.long), negatives, sem_aug_input_session_ids, input_reverse_ids, dense_targets
 
 
 # --------------------------
