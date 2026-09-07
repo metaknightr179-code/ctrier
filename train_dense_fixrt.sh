@@ -53,20 +53,26 @@ echo "# Hyperparams: -b 256 -l 1e-3 -e ${MAX_EPOCHS} -early_stop patience=100"
 echo "############################################################"
 echo ""
 
-# Wait for RT to be complete (DONE marker or 1000-line log)
+# Wait for RT to be complete (DONE marker, 1000-line log, or early stop = no running process)
 for variant in "${VARIANTS[@]}"; do
     marker="save_rt_fix_${variant}/DONE"
     rt_log="save_rt_fix_${variant}/train_result.txt"
     lines=$(wc -l < "${rt_log}" 2>/dev/null); lines=${lines:-0}
     if [ ! -f "${marker}" ] && [ "${lines}" -lt "${MAX_EPOCHS}" ]; then
-        echo "[Wait] RT for ${variant} not finished - waiting (poll every 120s)..."
+        echo "[Wait] RT for ${variant} not finished (epoch ${lines}/${MAX_EPOCHS}) - waiting (poll every 120s)..."
         while [ ! -f "${marker}" ]; do
             sleep 120
             lines=$(wc -l < "${rt_log}" 2>/dev/null); lines=${lines:-0}
+            # Break if reached max epochs
             [ "${lines}" -ge "${MAX_EPOCHS}" ] && break
+            # Break if RT process is no longer running (early stopped)
+            if ! pgrep -f "main_rt.py.*${variant}" >/dev/null 2>&1; then
+                echo "[Wait] RT for ${variant} stopped (early stop or done) at epoch ${lines}"
+                break
+            fi
         done
     fi
-    echo "[Wait] RT for ${variant} complete."
+    echo "[Wait] RT for ${variant} complete (epoch ${lines})."
 done
 
 # Verify RT checkpoints exist
