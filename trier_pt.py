@@ -501,12 +501,25 @@ class TRIER_PT(nn.Module):
     def rec_loss(self, output, targets, nce_loss, div_loss, consec_loss=0, dense_targets=None):
         if dense_targets is not None:
             # Dense multi-position CE: output is [batch, seq_len, hidden], compute logits at every position
-            logits = torch.matmul(output, self.combined_item_weight().T)  # [batch, seq_len, item_num]
-            # Mask: only compute loss where both input and target are non-padding
+            # Use chunked matmul to avoid materializing the full [batch, seq_len, item_num] tensor
+            # which would OOM on large catalogs (e.g. KuaiRand 133K items).
             mask = (dense_targets > 0).float()  # [batch, seq_len]
-            # CE at each position
-            ce = -logits.log_softmax(dim=-1).gather(dim=-1, index=dense_targets.unsqueeze(-1)).squeeze(-1)  # [batch, seq_len]
-            rec_loss = (ce * mask).sum() / mask.sum().clamp(min=1)  # mean over valid positions
+            batch_size, seq_len = dense_targets.shape
+            item_weight = self.combined_item_weight()  # [item_num, hidden]
+
+            # Process in sequence-position chunks to bound peak memory
+            CHUNK = 8  # positions per chunk; peak memory = batch * CHUNK * item_num
+            ce = torch.zeros(batch_size, seq_len, device=output.device)
+            for start in range(0, seq_len, CHUNK):
+                end = min(start + CHUNK, seq_len)
+                chunk_out = output[:, start:end, :]  # [batch, chunk, hidden]
+                chunk_logits = torch.matmul(chunk_out, item_weight.T)  # [batch, chunk, item_num]
+                chunk_targets = dense_targets[:, start:end]  # [batch, chunk]
+                chunk_ce = -chunk_logits.log_softmax(dim=-1).gather(
+                    dim=-1, index=chunk_targets.unsqueeze(-1)).squeeze(-1)  # [batch, chunk]
+                ce[:, start:end] = chunk_ce
+
+            rec_loss = (ce * mask).sum() / mask.sum().clamp(min=1)
             main_loss = rec_loss
         else:
             # Original last-position CE

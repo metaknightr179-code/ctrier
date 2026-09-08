@@ -83,13 +83,18 @@ for family in type notype; do
       continue
     fi
     echo "[PT ${family}] training ${OUT}"
+    # KuaiRand1K has a 133K-item catalog; dense CE logits [batch, seq, 133K]
+    # OOM at batch 256. Lower the batch size for that dataset only.
+    BATCH=256
+    [ "$DS" = "KuaiRand1K" ] && BATCH=32
+
     RESUME=""
     [ "$done_lines" -gt 0 ] && RESUME="-r"
     python3 main_pt.py \
       -tf ${DIR}/train-v0.txt -vf ${DIR}/valid-v0.txt -ef ${DIR}/test-v0.txt \
       -vn ${DIR}/${NEG} -en ${DIR}/${NEG} \
       -cat ${DIR}/${CATE} -vec ${DIR}/${VEC} \
-      -n ${N} -n_cat ${NCAT} -m train -e 1000 -b 256 -l 1e-3 \
+      -n ${N} -n_cat ${NCAT} -m train -e 1000 -b ${BATCH} -l 1e-3 \
       ${DENSE_FLAG} ${FAM_FLAG} ${extra} \
       -t_mode topk -early_stop -patience 100 -min_delta 0.0001 \
       ${RESUME} -i ./${RT_OUT} -o ./${OUT} 2>&1 | tee pt_${PREFIX}_${name}_${DS}.log
