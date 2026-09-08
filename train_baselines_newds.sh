@@ -31,8 +31,12 @@ done
 OUT_DIR="./baseline_results_${DS}"
 mkdir -p "${OUT_DIR}"
 
+# KuaiRand1K's 133K-item catalog OOMs at batch 256; lower to 32 for both baselines
+BATCH=256
+[ "$DS" = "KuaiRand1K" ] && BATCH=32
+
 echo "=============================================="
-echo "Baselines - ${DS} (item_num=${N}, n_cat=${NCAT})"
+echo "Baselines - ${DS} (item_num=${N}, n_cat=${NCAT}, batch=${BATCH})"
 echo "=============================================="
 
 # ---------------- GRU4Rec ----------------
@@ -45,7 +49,7 @@ else
     --train_file "${DIR}/train-v0.txt" \
     --test_file "${DIR}/test-v0.txt" \
     --item_num ${N} \
-    --epochs 500 --batch_size 256 --lr 1e-3 --maxlen 50 \
+    --epochs 500 --batch_size ${BATCH} --lr 1e-3 --maxlen 50 \
     --cat "${DIR}/${CATE}" --n_cat ${NCAT} --vec "${DIR}/${VEC}" \
     --ckpt_dir "${GRU_DIR}" \
     --output "${OUT_DIR}/gru4rec_results.txt" 2>&1 | tee "train_gru4rec_${DS}.log"
@@ -61,7 +65,7 @@ else
     --train_file "${DIR}/train-v0.txt" \
     --test_file "${DIR}/test-v0.txt" \
     --item_num ${N} \
-    --epochs 500 --batch_size 256 --lr 1e-3 --maxlen 50 \
+    --epochs 500 --batch_size ${BATCH} --lr 1e-3 --maxlen 50 \
     --ckpt_dir "${SAS_DIR}" \
     --output "${OUT_DIR}/sasrec_results.txt" 2>&1 | tee "train_sasrec_${DS}.log"
 fi
