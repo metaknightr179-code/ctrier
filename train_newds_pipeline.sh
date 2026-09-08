@@ -20,7 +20,7 @@ case "$DS" in
     N=3126; NCAT=18; DIR=./ML1M; CATE=ml1m_cate.txt; VEC=ml1m_vec.npy
     NEG="ML1M-random-sample_size=99-seed=4444.txt" ;;
   KuaiRand1K)
-    N=133868; NCAT=49; DIR=./KuaiRand1K; CATE=kuairand_cate.txt; VEC=kuairand_vec.npy
+    N=20001; NCAT=44; DIR=./KuaiRand1K; CATE=kuairand_cate.txt; VEC=kuairand_vec.npy
     NEG="KuaiRand-random-sample_size=99-seed=4444.txt" ;;
   MicroLens)
     N=26923; NCAT=57; DIR=./MicroLens; CATE=microlens_cate.txt; VEC=microlens_vec.npy
@@ -83,10 +83,8 @@ for family in type notype; do
       continue
     fi
     echo "[PT ${family}] training ${OUT}"
-    # KuaiRand1K has a 133K-item catalog; dense CE logits [batch, seq, 133K]
-    # OOM at batch 256. Lower the batch size for that dataset only.
+    # Batch 256 fits all converted datasets after the popularity cut
     BATCH=256
-    [ "$DS" = "KuaiRand1K" ] && BATCH=32
 
     RESUME=""
     [ "$done_lines" -gt 0 ] && RESUME="-r"

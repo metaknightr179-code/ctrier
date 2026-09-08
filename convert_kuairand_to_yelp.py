@@ -9,8 +9,11 @@ Input  (datasets/KuaiRand-1k/):
 Preprocessing (per user request):
   - keep only interactions with long_view == 1
   - dedup user-video pairs (keep earliest timestamp occurrence)
+  - POPULARITY CUT: keep only the top --max_items most-interacted videos
+    (the 1K-user / 4.3M-item raw space has ~10 interactions/item after
+    5-core, making next-item prediction unlearnable; the popularity cut
+    restores item density, standard SR-paper preprocessing on head items)
   - iterative 5-core filtering (users AND items with >= 5 interactions)
-    (mandatory here: raw catalog is 4.37M items against 1K users)
   - re-index item IDs to 1..N (0 reserved for padding)
   - leave-last-2 time split identical to convert_kuairec_to_yelp.py
   - tag ids re-indexed to 0..n_cat-1, multi-hot kuairand_vec.npy
@@ -48,6 +51,8 @@ def main():
     ap.add_argument('--input_dir', default='./datasets/KuaiRand-1k')
     ap.add_argument('--output_dir', default='./KuaiRand1K')
     ap.add_argument('--min_core', type=int, default=5)
+    ap.add_argument('--max_items', type=int, default=20000,
+                    help='Keep only the top-N most-interacted items (popularity cut). 0 = no cut.')
     args = ap.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -70,6 +75,19 @@ def main():
             best[key] = ts
     dedup = [(u, i, ts) for (u, i), ts in best.items()]
     print(f"After dedup: {len(dedup)}")
+
+    # ---------- popularity cut: keep top-N most-interacted items ----------
+    if args.max_items and args.max_items > 0:
+        item_counts = defaultdict(int)
+        for _, i, _ in dedup:
+            item_counts[i] += 1
+        top_items = {i for i, _ in sorted(item_counts.items(),
+                                          key=lambda kv: (-kv[1], kv[0]))[:args.max_items]}
+        before = len(dedup)
+        dedup = [(u, i, ts) for u, i, ts in dedup if i in top_items]
+        kept_ratio = len(dedup) / max(before, 1)
+        print(f"After popularity cut (top {args.max_items} items): "
+              f"{len(dedup)} interactions kept ({kept_ratio:.1%})")
 
     # ---------- 5-core ----------
     dedup = five_core(dedup, args.min_core)

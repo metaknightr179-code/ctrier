@@ -15,7 +15,7 @@ case "$DS" in
   ML1M)
     N=3126; NCAT=18; DIR=./ML1M; CATE=ml1m_cate.txt; VEC=ml1m_vec.npy ;;
   KuaiRand1K)
-    N=133868; NCAT=49; DIR=./KuaiRand1K; CATE=kuairand_cate.txt; VEC=kuairand_vec.npy ;;
+    N=20001; NCAT=44; DIR=./KuaiRand1K; CATE=kuairand_cate.txt; VEC=kuairand_vec.npy ;;
   MicroLens)
     N=26923; NCAT=57; DIR=./MicroLens; CATE=microlens_cate.txt; VEC=microlens_vec.npy ;;
   *) echo "Unknown DATASET: $DS"; exit 1 ;;
@@ -31,9 +31,8 @@ done
 OUT_DIR="./baseline_results_${DS}"
 mkdir -p "${OUT_DIR}"
 
-# KuaiRand1K's 133K-item catalog OOMs at batch 256; lower to 32 for both baselines
+# Batch 256 fits all converted datasets after the popularity cut
 BATCH=256
-[ "$DS" = "KuaiRand1K" ] && BATCH=32
 
 echo "=============================================="
 echo "Baselines - ${DS} (item_num=${N}, n_cat=${NCAT}, batch=${BATCH})"
