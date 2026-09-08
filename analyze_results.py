@@ -8,17 +8,23 @@ Auto-discovers every result file in the project directory:
   save_duorec_<variant>/test_result_small.txt      DuoRec, small-matrix protocol
   save_pt_fixrt_<config>_<variant>/test_result*.txt     TRIER with type embeddings
   save_pt_notype_fixrt_<config>_<variant>/test_result*.txt  TRIER without types
+  save_pt_dense_<config>_<dataset>/test_result*.txt     TRIER dense, type
+  save_pt_notype_dense_<config>_<dataset>/test_result*.txt  TRIER dense, notype
+  save_pt_<config>_<dataset>/test_result*.txt           TRIER non-dense, type (new datasets)
+  save_pt_notype_<config>_<dataset>/test_result*.txt    TRIER non-dense, notype (new datasets)
   baseline_results_<variant>/sasrec_results.txt         SASRec, big
-  baseline_results_<variant>/sasrec_results_small.txt   SASRec, small
   baseline_results_<variant>/gru4rec_results.txt        GRU4Rec, big
-  baseline_results_<variant>/gru4rec_results_small.txt  GRU4Rec, small
 
 Configs (lambda sweep): nodiv, lamb0002, lamb0005, lamb0005_consec0001,
 lamb001, lamb005, lamb01.
 
 Usage:
-    python3 analyze_results.py            # console table + results_summary.csv + results_tables.tex
-    python3 analyze_results.py --proto small   # only small-matrix protocol
+    python3 analyze_results.py                          # KuaiRec (default)
+    python3 analyze_results.py --dataset ML1M           # ML-1M only
+    python3 analyze_results.py --dataset KuaiRand1K      # KuaiRand only
+    python3 analyze_results.py --dataset MicroLens       # MicroLens only
+    python3 analyze_results.py --dataset all             # everything
+    python3 analyze_results.py --proto small             # small-matrix only
 """
 
 import os
@@ -31,12 +37,39 @@ from collections import OrderedDict
 # =============================================================================
 # Configuration
 # =============================================================================
-VARIANTS = [
-    ("kuairec_highest_individual", "Highest-Individual"),
-    ("kuairec_highest_average", "Highest-Average"),
-    ("kuairec_first_individual", "First-Individual"),
-    ("kuairec_first_average", "First-Average"),
-]
+DATASETS = {
+    "kuairec": {
+        "variants": [
+            ("kuairec_highest_individual", "Highest-Individual"),
+            ("kuairec_highest_average", "Highest-Average"),
+            ("kuairec_first_individual", "First-Individual"),
+            ("kuairec_first_average", "First-Average"),
+        ],
+        "label": "KuaiRec",
+        "prefixes": {"type": "pt_fixrt_", "notype": "pt_notype_fixrt_"},
+    },
+    "ML1M": {
+        "variants": [("ML1M", "ML-1M")],
+        "label": "ML-1M",
+        "prefixes": {"type_dense": "pt_dense_", "notype_dense": "pt_notype_dense_",
+                     "type": "pt_", "notype": "pt_notype_"},
+    },
+    "KuaiRand1K": {
+        "variants": [("KuaiRand1K", "KuaiRand")],
+        "label": "KuaiRand",
+        "prefixes": {"type_dense": "pt_dense_", "notype_dense": "pt_notype_dense_",
+                     "type": "pt_", "notype": "pt_notype_"},
+    },
+    "MicroLens": {
+        "variants": [("MicroLens", "MicroLens")],
+        "label": "MicroLens",
+        "prefixes": {"type_dense": "pt_dense_", "notype_dense": "pt_notype_dense_",
+                     "type": "pt_", "notype": "pt_notype_"},
+    },
+}
+
+# Default to KuaiRec for backward compatibility
+VARIANTS = DATASETS["kuairec"]["variants"]
 VARIANT_KEYS = [v[0] for v in VARIANTS]
 
 # model family ordering for display
@@ -92,38 +125,49 @@ def parse_baseline_result(filepath):
     return result or None
 
 
-def split_dir_name(dirname):
+def split_dir_name(dirname, variant_keys=None):
     """Split a save_<prefix>_<rest> dir name into (family, config, variant_key).
 
     Recognized:
       save_duorec_<variant>
-      save_pt_fixrt_<config>_<variant>
-      save_pt_notype_fixrt_<config>_<variant>
-      save_pt_gru_<config>_<variant>   (GRU-TRIER, if present)
+      save_pt_fixrt_<config>_<variant>           (KuaiRec, type)
+      save_pt_notype_fixrt_<config>_<variant>    (KuaiRec, notype)
+      save_pt_dense_<config>_<dataset>           (new DS, dense, type)
+      save_pt_notype_dense_<config>_<dataset>    (new DS, dense, notype)
+      save_pt_<config>_<dataset>                 (new DS, non-dense, type)
+      save_pt_notype_<config>_<dataset>          (new DS, non-dense, notype)
+      save_pt_gru_<config>_<variant>             (GRU-TRIER)
     Returns None if unrecognized.
     """
+    if variant_keys is None:
+        variant_keys = VARIANT_KEYS
     name = dirname[len("save_"):] if dirname.startswith("save_") else dirname
 
     if name.startswith("duorec_"):
         rest = name[len("duorec_"):]
-        if rest in VARIANT_KEYS:
+        if rest in variant_keys:
             return ("duorec", "duorec", rest)
 
-    for prefix, family in (("pt_notype_fixrt_", "trier_notype"),
+    # Order matters: check longer prefixes first
+    for prefix, family in (("pt_notype_dense_", "trier_notype"),
+                           ("pt_dense_", "trier_type"),
+                           ("pt_notype_fixrt_", "trier_notype"),
                            ("pt_fixrt_", "trier_type"),
+                           ("pt_notype_", "trier_notype"),
                            ("pt_gru_", "gru_trier")):
         if name.startswith(prefix):
             rest = name[len(prefix):]
-            # config = everything before the variant suffix
-            for vk in VARIANT_KEYS:
+            for vk in variant_keys:
                 if rest.endswith("_" + vk):
                     config = rest[: -(len(vk) + 1)]
                     return (family, config, vk)
     return None
 
 
-def collect_all_results(proto_filter=None):
+def collect_all_results(proto_filter=None, variant_keys=None):
     """Return list of dicts: {family, config, variant, proto, label, data}."""
+    if variant_keys is None:
+        variant_keys = VARIANT_KEYS
     rows = []
 
     # ---- TRIER / DuoRec dict-literal result files ----
@@ -155,7 +199,7 @@ def collect_all_results(proto_filter=None):
             continue  # ignore test_result_500.txt etc.
         if proto_filter and proto != proto_filter:
             continue
-        parsed = split_dir_name(dirname)
+        parsed = split_dir_name(dirname, variant_keys)
         if parsed is None:
             continue
         family, config, variant = parsed
@@ -172,7 +216,7 @@ def collect_all_results(proto_filter=None):
     for path in sorted(glob.glob(os.path.join(SCRIPT_DIR, "baseline_results_*", "*_results*.txt"))):
         dirname = os.path.basename(os.path.dirname(path))  # baseline_results_<variant>
         variant = dirname[len("baseline_results_"):]
-        if variant not in VARIANT_KEYS:
+        if variant not in variant_keys:
             continue
         basename = os.path.basename(path)                 # sasrec_results.txt / sasrec_results_small.txt
         m = re.match(r'^(sasrec|gru4rec|bert4rec)_results(_small)?\.txt$', basename)
@@ -371,23 +415,46 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--proto", choices=["big", "small"], default=None,
                         help="Only show one protocol (default: both)")
+    parser.add_argument("--dataset", default="kuairec",
+                        choices=list(DATASETS.keys()) + ["all"],
+                        help="Which dataset to analyze (default: kuairec)")
     args = parser.parse_args()
 
-    print("Collecting results...")
-    rows = collect_all_results(proto_filter=args.proto)
+    # Collect variant keys for the selected dataset(s)
+    if args.dataset == "all":
+        variant_keys = []
+        for ds in DATASETS.values():
+            variant_keys.extend(v[0] for v in ds["variants"])
+        ds_label = "All datasets"
+    else:
+        ds_info = DATASETS[args.dataset]
+        variant_keys = [v[0] for v in ds_info["variants"]]
+        ds_label = ds_info["label"]
+
+    print(f"Collecting results for {ds_label}...")
+    rows = collect_all_results(proto_filter=args.proto, variant_keys=variant_keys)
     print(f"Found {len(rows)} result files\n")
 
     if not rows:
-        print("No results found. Run eval scripts first "
-              "(eval_duorec.sh, eval_small_fixrt.sh, eval_greedy_fixrt.sh, eval_small_baselines.sh).")
+        print(f"No results found for {ds_label}. Run eval scripts first.")
         return
+
+    # Update VARIANTS for display (LaTeX table headers, sort order)
+    global VARIANTS, VARIANT_KEYS
+    if args.dataset == "all":
+        VARIANTS = [(vk, vk.replace("kuairec_", "").replace("_", "-"))
+                    for ds in DATASETS.values() for vk, _ in ds["variants"]]
+    else:
+        VARIANTS = DATASETS[args.dataset]["variants"]
+    VARIANT_KEYS = [v[0] for v in VARIANTS]
 
     protos = [args.proto] if args.proto else ["big", "small"]
     for p in protos:
         print_console_table(rows, p)
 
-    write_csv(rows, os.path.join(SCRIPT_DIR, "results_summary.csv"))
-    write_latex(rows, os.path.join(SCRIPT_DIR, "results_tables.tex"))
+    suffix = f"_{args.dataset}" if args.dataset != "kuairec" else ""
+    write_csv(rows, os.path.join(SCRIPT_DIR, f"results_summary{suffix}.csv"))
+    write_latex(rows, os.path.join(SCRIPT_DIR, f"results_tables{suffix}.tex"))
 
 
 if __name__ == "__main__":
