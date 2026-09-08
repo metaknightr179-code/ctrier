@@ -46,9 +46,11 @@ else
   echo "[GRU4Rec] training..."
   python3 gru4rec_pytorch.py \
     --train_file "${DIR}/train-v0.txt" \
+    --valid_file "${DIR}/valid-v0.txt" \
     --test_file "${DIR}/test-v0.txt" \
     --item_num ${N} \
     --epochs 500 --batch_size ${BATCH} --lr 1e-3 --maxlen 50 \
+    --patience 100 \
     --cat "${DIR}/${CATE}" --n_cat ${NCAT} --vec "${DIR}/${VEC}" \
     --ckpt_dir "${GRU_DIR}" \
     --output "${OUT_DIR}/gru4rec_results.txt" 2>&1 | tee "train_gru4rec_${DS}.log"
@@ -62,9 +64,11 @@ else
   echo "[SASRec] training..."
   python3 sasrec_pytorch.py \
     --train_file "${DIR}/train-v0.txt" \
+    --valid_file "${DIR}/valid-v0.txt" \
     --test_file "${DIR}/test-v0.txt" \
     --item_num ${N} \
     --epochs 500 --batch_size ${BATCH} --lr 1e-3 --maxlen 50 \
+    --patience 100 \
     --ckpt_dir "${SAS_DIR}" \
     --output "${OUT_DIR}/sasrec_results.txt" 2>&1 | tee "train_sasrec_${DS}.log"
 fi

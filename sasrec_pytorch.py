@@ -58,7 +58,8 @@ def load_sequences(data_file):
     sequences = []
     with open(data_file, 'r') as f:
         for line in f:
-            items = [int(x) for x in line.strip().split()]
+            tokens = line.strip().split()
+            items = list(map(int, tokens[1:]))  # skip user_id (first token)
             if len(items) >= 2:
                 sequences.append(items)
     return sequences
@@ -86,7 +87,8 @@ def create_batches(sequences, batch_size, maxlen=50):
     return batches
 
 
-def train_sasrec(train_file, test_file, item_num, epochs=20, batch_size=64, lr=0.001, maxlen=50, device='cuda', ckpt_dir='.'):
+def train_sasrec(train_file, item_num, epochs=20, batch_size=64, lr=0.001, maxlen=50,
+                 device='cuda', ckpt_dir='.', valid_file=None, patience=50, min_delta=0.0001):
     print(f'Loading training data...')
     train_sequences = load_sequences(train_file)
     print(f'Loaded {len(train_sequences)} valid sequences')
@@ -94,6 +96,12 @@ def train_sasrec(train_file, test_file, item_num, epochs=20, batch_size=64, lr=0
     print('Creating training batches...')
     train_batches = create_batches(train_sequences, batch_size, maxlen)
     print(f'Created {len(train_batches)} batches')
+
+    valid_batches = None
+    if valid_file:
+        valid_sequences = load_sequences(valid_file)
+        valid_batches = create_batches(valid_sequences, batch_size, maxlen)
+        print(f'Created {len(valid_batches)} validation batches')
     
     model = SASRecModel(item_num, hidden_units=50, num_blocks=2, num_heads=1, 
                         dropout_rate=0.5, maxlen=maxlen).to(device)
@@ -105,6 +113,7 @@ def train_sasrec(train_file, test_file, item_num, epochs=20, batch_size=64, lr=0
     
     best_loss = float('inf')
     best_epoch = 0
+    patience_counter = 0
     
     for epoch in range(1, epochs + 1):
         model.train()
@@ -126,13 +135,34 @@ def train_sasrec(train_file, test_file, item_num, epochs=20, batch_size=64, lr=0
             total_loss += loss.item()
         
         avg_loss = total_loss / len(train_batches)
+
+        # Validation-based monitoring
+        if valid_batches:
+            model.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for vb_input, vb_target in valid_batches:
+                    vb_input = vb_input.to(device)
+                    vb_target = vb_target.to(device)
+                    vb_logits = model(vb_input)
+                    val_loss += criterion(vb_logits, vb_target).item()
+            val_loss /= len(valid_batches)
+            monitor_loss = val_loss
+            print(f'Epoch {epoch}/{epochs}, Loss: {avg_loss:.4f}, Val: {val_loss:.4f}, Best: {best_loss:.4f} (ep {best_epoch})')
+        else:
+            monitor_loss = avg_loss
+            print(f'Epoch {epoch}/{epochs}, Loss: {avg_loss:.4f}, Best: {best_loss:.4f} (ep {best_epoch})')
         
-        if avg_loss < best_loss:
-            best_loss = avg_loss
+        if monitor_loss < best_loss - min_delta:
+            best_loss = monitor_loss
             best_epoch = epoch
             torch.save(model.state_dict(), ckpt_path)
-        
-        print(f'Epoch {epoch}/{epochs}, Loss: {avg_loss:.4f}, Best: {best_loss:.4f} (ep {best_epoch})')
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f'Early stopping at epoch {epoch} (patience {patience})')
+                break
     
     if os.path.exists(ckpt_path):
         model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
@@ -205,6 +235,8 @@ def main():
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--maxlen', type=int, default=50)
+    parser.add_argument('--valid_file', default=None, help='Validation file for early stopping')
+    parser.add_argument('--patience', type=int, default=50, help='Early stopping patience')
     parser.add_argument('--output', default='sasrec_results.txt')
     parser.add_argument('--eval_only', action='store_true', help='Skip training, only evaluate saved checkpoint')
     parser.add_argument('--ckpt_path', default='sasrec_best.pth', help='Path to checkpoint file')
@@ -232,10 +264,11 @@ def main():
         if not args.train_file:
             parser.error('--train_file is required when not in eval_only mode')
         start_time = time.time()
-        model = train_sasrec(args.train_file, args.test_file, args.item_num,
+        model = train_sasrec(args.train_file, args.item_num,
                             epochs=args.epochs, batch_size=args.batch_size, 
                             lr=args.lr, maxlen=args.maxlen, device=device,
-                            ckpt_dir=ckpt_dir)
+                            ckpt_dir=ckpt_dir,
+                            valid_file=args.valid_file, patience=args.patience)
         train_time = time.time() - start_time
         # Save checkpoint to ckpt_dir
         torch.save(model.state_dict(), ckpt_path)

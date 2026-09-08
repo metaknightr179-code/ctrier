@@ -47,7 +47,8 @@ class SeqDataset(Dataset):
         self.maxlen = maxlen
         with open(data_file, 'r') as f:
             for line in f:
-                items = [int(x) for x in line.strip().split()]
+                tokens = line.strip().split()
+                items = list(map(int, tokens[1:]))  # skip user_id (first token)
                 if len(items) >= 2:
                     self.data.append(items)
 
@@ -76,7 +77,8 @@ class EvalDataset(Dataset):
         self.maxlen = maxlen
         with open(data_file, 'r') as f:
             for line in f:
-                items = [int(x) for x in line.strip().split()]
+                tokens = line.strip().split()
+                items = list(map(int, tokens[1:]))  # skip user_id (first token)
                 if len(items) >= 2:
                     self.data.append(items)
 
@@ -94,7 +96,8 @@ class EvalDataset(Dataset):
         )
 
 
-def train_gru4rec(train_file, item_num, epochs, batch_size, lr, maxlen, ckpt_dir, device):
+def train_gru4rec(train_file, item_num, epochs, batch_size, lr, maxlen, ckpt_dir, device,
+                  valid_file=None, patience=50, min_delta=0.0001):
     """Train GRU4Rec with BPTT (every position predicts next item)."""
     dataset = SeqDataset(train_file, maxlen)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
@@ -106,6 +109,7 @@ def train_gru4rec(train_file, item_num, epochs, batch_size, lr, maxlen, ckpt_dir
     os.makedirs(ckpt_dir, exist_ok=True)
     ckpt_path = os.path.join(ckpt_dir, 'gru4rec_best.pth')
     best_loss = float('inf')
+    patience_counter = 0
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -129,15 +133,47 @@ def train_gru4rec(train_file, item_num, epochs, batch_size, lr, maxlen, ckpt_dir
             total_steps += 1
 
         avg_loss = total_loss / max(total_steps, 1)
-        if avg_loss < best_loss:
-            best_loss = avg_loss
-            torch.save(model.state_dict(), ckpt_path)
 
-        print(f'Epoch {epoch}/{epochs}, Loss: {avg_loss:.4f}, Best: {best_loss:.4f}', flush=True)
+        # Validation-based early stopping
+        if valid_file:
+            val_loss = evaluate_loss(model, valid_file, item_num, maxlen, batch_size, criterion, device)
+            monitor_loss = val_loss
+            print(f'Epoch {epoch}/{epochs}, Loss: {avg_loss:.4f}, Val: {val_loss:.4f}, Best: {best_loss:.4f}', flush=True)
+        else:
+            monitor_loss = avg_loss
+            print(f'Epoch {epoch}/{epochs}, Loss: {avg_loss:.4f}, Best: {best_loss:.4f}', flush=True)
+
+        if monitor_loss < best_loss - min_delta:
+            best_loss = monitor_loss
+            torch.save(model.state_dict(), ckpt_path)
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f'Early stopping at epoch {epoch} (patience {patience})', flush=True)
+                break
 
     if os.path.exists(ckpt_path):
         model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
     return model
+
+
+def evaluate_loss(model, data_file, item_num, maxlen, batch_size, criterion, device):
+    """Compute average loss on a validation set."""
+    dataset = SeqDataset(data_file, maxlen)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    model.eval()
+    total_loss = 0.0
+    total_steps = 0
+    with torch.no_grad():
+        for batch_input, batch_target in dataloader:
+            batch_input = batch_input.to(device)
+            batch_target = batch_target.to(device)
+            logits = model(batch_input)
+            loss = criterion(logits.reshape(-1, item_num + 1), batch_target.reshape(-1))
+            total_loss += loss.item()
+            total_steps += 1
+    return total_loss / max(total_steps, 1)
 
 
 def evaluate_gru4rec(model, test_file, item_num, maxlen, batch_size, cat_map, cat_num, item2vec, device):
@@ -192,6 +228,8 @@ def main():
     parser.add_argument('--vec', type=str, default=None, help='Item2vec .npy file')
     parser.add_argument('--output', default='gru4rec_results.txt')
     parser.add_argument('--ckpt_dir', default='./save_gru4rec')
+    parser.add_argument('--valid_file', default=None, help='Validation file for early stopping')
+    parser.add_argument('--patience', type=int, default=50, help='Early stopping patience')
     parser.add_argument('--eval_only', action='store_true', help='Skip training, only evaluate saved checkpoint')
     parser.add_argument('--ckpt_path', default=None, help='Path to checkpoint file for eval_only mode')
     args = parser.parse_args()
@@ -232,7 +270,8 @@ def main():
         # Train
         start_time = time.time()
         model = train_gru4rec(args.train_file, args.item_num, args.epochs,
-                              args.batch_size, args.lr, args.maxlen, args.ckpt_dir, device)
+                              args.batch_size, args.lr, args.maxlen, args.ckpt_dir, device,
+                              valid_file=args.valid_file, patience=args.patience)
         train_time = time.time() - start_time
 
     # Evaluate
