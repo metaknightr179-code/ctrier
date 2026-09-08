@@ -263,9 +263,16 @@ class TRIER_PT(nn.Module):
             # Compute attention weights from generation probabilities
             weight = probabilities.softmax(-1).unsqueeze(1).detach()
             
+            # In dense mode the encoder returns [batch, seq_len, hidden]; beam
+            # generation scores the whole session, so gather the last real
+            # position (item_seq_len-1, official TRIER semantics) first.
+            gen_rep = output
+            if getattr(self.args, 'dense', False):
+                gen_rep = self.gather_indexes(output, torch.clamp(item_seq_len, min=1) - 1)
+
             # Generate recommendations with and without diversity consideration
             output_logit, output_logit_greedy, output_token, output_token_greedy = \
-                self.generate_by_score(input_session_ids, output, F, weight)
+                self.generate_by_score(input_session_ids, gen_rep, F, weight)
             
             # Calculate diversity loss
             div_loss = self.diversity_loss(output_logit, output_logit_greedy, output_token, output_token_greedy, item2vec)
