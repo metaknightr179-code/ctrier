@@ -359,10 +359,10 @@ def write_latex(rows, path):
         if not proto_rows:
             continue
 
-        # group rows by model (family+config), preserving variant order
+        # group rows by model (family+config+infer mode), preserving variant order
         models = OrderedDict()
         for r in sorted(proto_rows, key=sort_key):
-            key = (r["family"], r["config"])
+            key = (r["family"], r["config"], r["infer"])
             models.setdefault(key, {})[r["variant"]] = r["data"]
 
         lines.append(r"\begin{table}[ht]")
