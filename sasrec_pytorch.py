@@ -101,9 +101,12 @@ class EvalDataset(Dataset):
 
     Matches GRU4Rec's EvalDataset convention: strips user_id (first token),
     truncates to the last (maxlen-1) items, and pads on the left with 0.
-    Also returns the set of 1-indexed seen item IDs so that downstream code
-    can mask them from the ranking (otherwise the baseline would trivially
+    Also returns a list of 1-indexed seen item IDs so downstream code can
+    mask them from the ranking (otherwise the baseline would trivially
     recommend items already in the input sequence).
+
+    A custom collate_fn is supplied to DataLoader because the default one
+    mishandles list-of-ints third elements (it transposes them across rows).
     """
     def __init__(self, data_file, maxlen=50):
         self.data = []
@@ -123,11 +126,23 @@ class EvalDataset(Dataset):
         input_seq = seq[:-1][-(self.maxlen - 1):]
         target = seq[-1]
         padded = [0] * ((self.maxlen - 1) - len(input_seq)) + input_seq
+        # Raw list of 1-indexed seen item IDs — handled by custom collate_fn below
+        seen_list = [item for item in input_seq if item > 0]
         return (
             torch.tensor(padded, dtype=torch.long),
             torch.tensor(target, dtype=torch.long),
-            set(input_seq),  # 1-indexed item IDs seen in input, for masking
+            seen_list,
         )
+
+
+def _eval_collate(batch):
+    """Custom collate that (a) stacks padded input seqs and targets as LongTensors,
+    and (b) returns the per-row seen-item lists untouched so the masking loop can
+    iterate them row-by-row without any transposition from the default collate."""
+    padded = torch.stack([b[0] for b in batch], dim=0)  # (B, maxlen-1)
+    targets = torch.stack([b[1] for b in batch], dim=0)    # (B,)
+    seen = [b[2] for b in batch]                            # list[list[int]], length B
+    return padded, targets, seen
 
 
 def train_sasrec(train_file, item_num, epochs=20, batch_size=64, lr=0.001, maxlen=50,
@@ -226,7 +241,8 @@ def evaluate_sasrec(model, test_file, item_num, maxlen=50, device='cuda',
     """
     print(f'\nEvaluating...')
     eval_ds = EvalDataset(test_file, maxlen)
-    eval_loader = DataLoader(eval_ds, batch_size=batch_size, shuffle=False, num_workers=0)
+    eval_loader = DataLoader(eval_ds, batch_size=batch_size, shuffle=False,
+                              num_workers=0, collate_fn=_eval_collate)
 
     model.eval()
     total_result = []
@@ -238,11 +254,12 @@ def evaluate_sasrec(model, test_file, item_num, maxlen=50, device='cuda',
 
             logits = model(batch_input)  # (B, item_num), 0-indexed
 
-            # Mask items already in each user's input sequence (they'd trivially
-            # appear at top of the ranking otherwise)
-            for i, seen in enumerate(batch_seen):
-                for item in seen:
-                    if item > 0 and (item - 1) < logits.shape[1]:
+            # Mask items already in each user's input sequence so diversity
+            # is computed on the same top-20 list the baseline actually ranks.
+            # batch_seen is a list[list[int]] — exactly one per row in the batch.
+            for i, seen_items in enumerate(batch_seen):
+                for item in seen_items:
+                    if (item - 1) < logits.shape[1]:
                         logits[i, item - 1] = float('-inf')
 
             # topk returns 0-indexed logit positions; +1 to get 1-indexed item IDs
