@@ -62,17 +62,37 @@ for CFG in "${CONFIGS[@]}"; do
         echo "PT Dense [TYPE]: ${CFG_NAME} / ${VAR} -> ${pt_dir}"
         echo "============================================================"
 
+        # Completion check: DONE marker (written by main_pt on normal exit,
+        # including early stop), eval results present, or ran to max epochs.
+        # Early-stopped runs finish BELOW max epochs, so the old
+        # "lines >= MAX_EPOCHS" test alone retried finished runs forever.
+        EPOCHS_DONE=$(wc -l < "${pt_dir}/train_result.txt" 2>/dev/null); EPOCHS_DONE=${EPOCHS_DONE:-0}
+        if [ -f "${pt_dir}/DONE" ] || [ -f "${pt_dir}/test_result.txt" ] || [ "$EPOCHS_DONE" -ge "$MAX_EPOCHS" ]; then
+            echo "  Already complete (DONE / epoch ${EPOCHS_DONE}) - skip"
+            continue
+        fi
+
+        # Resume from the NEWEST checkpoint, not from the log line count:
+        # an aborted fresh start truncates train_result.txt ('w' mode) while the
+        # keep-2 checkpoint cleanup leaves high-epoch checkpoints intact (it
+        # deletes lowest-numbered). If the log fell behind the checkpoint epoch,
+        # pad it so main_pt's line-count resume loads the right checkpoint.
         RESUME=""
-        if [ -f "${pt_dir}/train_result.txt" ]; then
-            EPOCHS_DONE=$(wc -l < "${pt_dir}/train_result.txt")
-            if [ "$EPOCHS_DONE" -ge "$MAX_EPOCHS" ]; then
-                echo "  Already complete - skip"
-                continue
+        NEWEST=$(ls "${pt_dir}/model"/duorec-*.pth 2>/dev/null | sed 's/.*duorec-//;s/\.pth//' | sort -n | tail -1)
+        if [ -n "$NEWEST" ]; then
+            if [ "$EPOCHS_DONE" -lt "$NEWEST" ]; then
+                echo "  Repairing truncated log: ${EPOCHS_DONE} lines vs newest ckpt epoch ${NEWEST} (padding)"
+                while [ "$EPOCHS_DONE" -lt "$NEWEST" ]; do
+                    echo "recovered-epoch $((EPOCHS_DONE + 1))" >> "${pt_dir}/train_result.txt"
+                    EPOCHS_DONE=$((EPOCHS_DONE + 1))
+                done
+            elif [ "$EPOCHS_DONE" -gt "$NEWEST" ]; then
+                echo "  Repairing log ahead of ckpts: ${EPOCHS_DONE} lines vs newest ${NEWEST} (trimming)"
+                head -n "$NEWEST" "${pt_dir}/train_result.txt" > "${pt_dir}/train_result.txt.fix" \
+                    && mv "${pt_dir}/train_result.txt.fix" "${pt_dir}/train_result.txt"
             fi
-            if [ -f "${pt_dir}/model/duorec-${EPOCHS_DONE}.pth" ]; then
-                echo "  Resuming from epoch ${EPOCHS_DONE}"
-                RESUME="-r"
-            fi
+            echo "  Resuming from epoch ${NEWEST}"
+            RESUME="-r"
         fi
 
         CUDA_VISIBLE_DEVICES=${GPU} python3 main_pt.py \

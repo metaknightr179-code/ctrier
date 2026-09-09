@@ -424,6 +424,13 @@ if __name__ == '__main__':
         # Close log file
         fw.close()
 
+        # Completion marker for pipeline scripts: written only on normal exit
+        # (max epochs or early stop); absent if the process was killed.
+        # This lets train scripts skip early-stopped runs (which end BEFORE max
+        # epochs, so the old "log lines >= max_epochs" test retried them forever).
+        with open(save_path + 'DONE', 'w') as f:
+            f.write('done\n')
+
 
     # --------------------------
     # SUBSECTION 3.5: VALIDATION MODE

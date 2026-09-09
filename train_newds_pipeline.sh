@@ -78,16 +78,37 @@ for family in type notype; do
     OUT="${PREFIX}_${name}_${DS}"
     [ -n "$DENSE_FLAG" ] || OUT="${OUT/_dense/}"   # DENSE=0 -> drop _dense from dir name
     done_lines=$(wc -l < "${OUT}/train_result.txt" 2>/dev/null); done_lines=${done_lines:-0}
-    if [ "$done_lines" -ge 1000 ]; then
-      echo "[PT ${family}] ${OUT} already complete - skipping"
+    # Completion: DONE marker (main_pt writes it on normal exit incl. early stop),
+    # eval results present, or ran to max epochs. Early-stopped runs end BEFORE
+    # 1000 epochs, so checking only "lines >= 1000" retried finished runs forever.
+    if [ -f "${OUT}/DONE" ] || [ -f "${OUT}/test_result.txt" ] || [ "$done_lines" -ge 1000 ]; then
+      echo "[PT ${family}] ${OUT} already complete (DONE / epoch ${done_lines}) - skipping"
       continue
     fi
     echo "[PT ${family}] training ${OUT}"
     # Batch 256 fits all converted datasets after the popularity cut
     BATCH=256
 
+    # Resume from the NEWEST checkpoint; reconcile a log/checkpoint mismatch
+    # (aborted fresh start truncates the log; mid-save crash can leave the log
+    # one line ahead) so main_pt always loads an existing checkpoint.
     RESUME=""
-    [ "$done_lines" -gt 0 ] && RESUME="-r"
+    NEWEST=$(ls "${OUT}/model"/duorec-*.pth 2>/dev/null | sed 's/.*duorec-//;s/\.pth//' | sort -n | tail -1)
+    if [ -n "$NEWEST" ]; then
+      if [ "$done_lines" -lt "$NEWEST" ]; then
+        echo "  Repairing truncated log: ${done_lines} lines vs ckpt epoch ${NEWEST} (padding)"
+        while [ "$done_lines" -lt "$NEWEST" ]; do
+          echo "recovered-epoch $((done_lines + 1))" >> "${OUT}/train_result.txt"
+          done_lines=$((done_lines + 1))
+        done
+      elif [ "$done_lines" -gt "$NEWEST" ]; then
+        echo "  Repairing log ahead of ckpts: ${done_lines} lines vs ${NEWEST} (trimming)"
+        head -n "$NEWEST" "${OUT}/train_result.txt" > "${OUT}/train_result.txt.fix" \
+          && mv "${OUT}/train_result.txt.fix" "${OUT}/train_result.txt"
+      fi
+      echo "  Resuming from epoch ${NEWEST}"
+      RESUME="-r"
+    fi
     python3 main_pt.py \
       -tf ${DIR}/train-v0.txt -vf ${DIR}/valid-v0.txt -ef ${DIR}/test-v0.txt \
       -vn ${DIR}/${NEG} -en ${DIR}/${NEG} \
