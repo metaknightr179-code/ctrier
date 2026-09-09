@@ -69,6 +69,7 @@ else
     --item_num ${N} \
     --epochs 500 --batch_size ${BATCH} --lr 1e-3 --maxlen 50 \
     --patience 100 \
+    --cat "${DIR}/${CATE}" --n_cat ${NCAT} --vec "${DIR}/${VEC}" \
     --ckpt_dir "${SAS_DIR}" \
     --output "${OUT_DIR}/sasrec_results.txt" 2>&1 | tee "train_sasrec_${DS}.log"
 fi
