@@ -55,6 +55,16 @@ mkdir -p ./rt_dummy_for_duorec
 run_eval() {
     # $1=PT_DIR  $2=LATEST  $3=TYPE_FLAG  $4=OUT  $5=TAG  $6=MODE (topk|greedy)
     local PT_DIR="$1" LATEST="$2" TYPE_FLAG="$3" OUT="$4" TAG="$5" MODE="$6"
+
+    # Skip if this checkpoint was already evaluated (result file exists and no
+    # checkpoint is newer than it). Delete the result file to force re-eval.
+    local NEWER
+    NEWER=$(find "${PT_DIR}/model" -name 'duorec-*.pth' -newer "$OUT" 2>/dev/null | head -1)
+    if [ -s "$OUT" ] && [ -z "$NEWER" ]; then
+        echo "--- ${MODE^^} [${TAG}] SKIP (up-to-date: $(basename "$OUT"))"
+        return 0
+    fi
+
     local STAGE="${STAGE_BASE}/${TAG}"
     rm -rf "$STAGE"; mkdir -p "$STAGE"
     ln -s "$(cd "$PT_DIR/model" && pwd)" "$STAGE/model"
