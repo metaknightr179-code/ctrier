@@ -545,8 +545,9 @@ def write_latex(rows, path, ds_label="", suffix=""):
                     lines.append(ds_cell + " & " + block_cell + " & " + m_label + " & " + " & ".join(cells) + r" \\")
                 # add small gap between blocks (but not after the last block)
                 # use \addlinespace from booktabs
-            # add extra spacing between dataset groups
-            lines.append(r"\addlinespace[0.3em]")
+            # add extra spacing between dataset groups (not after the last one)
+            if v_idx < len(VARIANTS) - 1:
+                lines.append(r"\addlinespace[0.3em]")
 
         lines.append(r"\bottomrule")
         lines.append(r"\end{tabular}")
