@@ -28,12 +28,14 @@ case "$DS" in
   *) echo "Unknown DATASET: $DS"; exit 1 ;;
 esac
 
-# 7 configs: name|extra_flags   (mirrors the KuaiRec dense grid)
+# 9 configs: name|extra_flags   (mirrors the KuaiRec dense grid + consec sweep)
 CONFIGS=(
   "nodiv|"
   "lamb0002|-div -lamb 0.002"
   "lamb0005|-div -lamb 0.005"
   "lamb0005_consec0001|-div -lamb 0.005 -lmd_consec 0.001"
+  "lamb0005_consec005|-div -lamb 0.005 -lmd_consec 0.05"
+  "lamb0005_consec01|-div -lamb 0.005 -lmd_consec 0.1"
   "lamb001|-div -lamb 0.01"
   "lamb005|-div -lamb 0.05"
   "lamb01|-div -lamb 0.1"
