@@ -471,7 +471,11 @@ def write_latex(rows, path, ds_label="", suffix=""):
 
         # ---- LaTeX assembly ----
         cap_ds = tex_escape(ds_label) if ds_label else "all datasets"
-        lines.append(r"\begin{table*}[t]")
+        # Wide (>=2 dataset variants): spans both columns; narrow (single-dataset):
+        # fits one ACM column at footnotesize without resizebox stretch.
+        wide = len(VARIANTS) >= 2
+        env = "table*" if wide else "table"
+        lines.append(r"\begin{" + env + r"}[t]")
         lines.append(r"\centering")
         lines.append(r"\caption{Overall comparison on " + cap_ds + r" ("
                      + proto_caption.get(proto, proto)
@@ -479,16 +483,20 @@ def write_latex(rows, path, ds_label="", suffix=""):
                        r"in \underline{underline}. CS@$K$ = average "
                        r"consecutive item similarity (lower is more diverse).}")
         lines.append(r"\label{tab:results" + suffix + "_" + proto + r"}")
-        lines.append(r"\resizebox{\textwidth}{!}{%")
+        if wide:
+            lines.append(r"\resizebox{\textwidth}{!}{%")
+        else:
+            lines.append(r"\setlength{\tabcolsep}{4pt}")
+            lines.append(r"\footnotesize")
 
-        # Column spec: 2 label cols (dataset + sub-block + metric) + N model cols
+        # Column spec: 3 label cols (dataset group + sub-block + metric) + N model cols
         n_models = len(model_keys)
-        lines.append(r"\begin{tabular}{llc" + "c" * n_models + r"}")
+        lines.append(r"\begin{tabular}{lllc" + "c" * n_models + r"}")
         lines.append(r"\toprule")
 
-        # Header: (Dataset, Metric) spans 2 label cols; each model gets a col.
-        hdr = r"& & " + " & ".join(tex_model_label(f, c, i)
-                                    for f, c, i in model_keys) + r" \\"
+        # Header: three label cols (blank) + one header per model column
+        hdr = r"& & & " + " & ".join(tex_model_label(f, c, i)
+                                     for f, c, i in model_keys) + r" \\"
         lines.append(hdr)
         lines.append(r"\midrule")
 
@@ -533,7 +541,8 @@ def write_latex(rows, path, ds_label="", suffix=""):
                         elif ul:
                             cell_str = r"\underline{" + cell_str + r"}"
                         cells.append(cell_str)
-                    lines.append(ds_cell + " & " + block_cell + " & " + " & ".join(cells) + r" \\")
+                    # Row: dataset_label & block_label & metric_name & cell1 & cell2 & ... \\
+                    lines.append(ds_cell + " & " + block_cell + " & " + m_label + " & " + " & ".join(cells) + r" \\")
                 # add small gap between blocks (but not after the last block)
                 # use \addlinespace from booktabs
             # add extra spacing between dataset groups
@@ -541,8 +550,9 @@ def write_latex(rows, path, ds_label="", suffix=""):
 
         lines.append(r"\bottomrule")
         lines.append(r"\end{tabular}")
-        lines.append(r"}")
-        lines.append(r"\end{table*}")
+        if wide:
+            lines.append(r"}")
+        lines.append(r"\end{" + env + r"}")
         lines.append("")
 
     with open(path, "w") as f:
