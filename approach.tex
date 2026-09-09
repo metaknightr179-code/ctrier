@@ -1,0 +1,144 @@
+% =============================================================================
+% Section 3: Approach
+% Structure mirrors "Diversifying Sequential Recommendation with Retrospective
+% and Prospective Transformers" (Shi et al., TOIS 2024, Section 3):
+%   3.1 Overview
+%   3.2 Sequence Encoder (Embedding / Self-Attention)
+%   3.3 Retrospective Greedy Search  (RT module)
+%   3.4 Prospective Diversity Promoting (PT module)
+%   3.5 Dense Next-Item Supervision
+%   3.6 Diversity Promoting Loss
+%   3.7 Type-Enriched Item Representations
+% =============================================================================
+
+\section{Approach}
+\label{sec:approach}
+
+\subsection{Overview}
+\label{sec:overview}
+Sequential recommendation aims to predict the next item(s) a user is likely to interact with, given her/his historical interaction sequence $S_u = (i_1, i_2, \dots, i_T)$ ordered by interaction time. Despite the high accuracy achieved by modern transformer-based sequential recommenders, these models often suffer from two interlinked problems: (i)~short interaction sequences provide insufficient evidence for modeling the user's multiple, potentially divergent, interests, and (ii)~pure accuracy-oriented objectives bias the system toward popular head items, producing narrow recommendation lists that score poorly on diversity metrics and degrade long-term user satisfaction~\cite{shi2024trier}.
+
+We adopt the \emph{TRIER} (\emph{reTrospective and pRospective transformers for dIversified sEquential Recommendation}) framework to address these problems jointly through a two-stage pipeline, as illustrated in Figure~\ref{fig:trier_framework}. The first stage, \emph{Retrospective Greedy Search} (Section~\ref{sec:rt}), trains a reverse-direction transformer that hallucinates plausible historical interactions that \emph{could have preceded} the observed sequence. By prepending these generated prefix items to the sequence, TRIER enriches short sequences and reconstructs the user's long-term interest trajectory. The second stage, \emph{Prospective Diversity Promoting} (Section~\ref{sec:pt}), trains a forward-direction transformer that produces diverse recommendation lists. During this stage, multiple RT-augmented views of each sequence are used to expose the model to different plausible user intents; a dedicated diversity loss then pressures the model to generate recommendation lists whose category distribution spans as many of those intents as possible, without sacrificing relevance. Finally, we enrich every item representation with learnable \emph{type embeddings} (Section~\ref{sec:type_embeddings}) derived from the item's semantic category metadata, providing an inductive bias that aligns representation learning with the category-based diversity objectives.
+
+% TODO: add \usepackage{graphicx} + \includegraphics{figures/trier_framework.pdf}
+% \begin{figure}[t]
+% \centering
+% \includegraphics[width=\linewidth]{figures/trier_framework.pdf}
+% \caption{Overall architecture of TRIER. Stage 1 (RT): reverse transformer predicts
+% plausible historical items, producing $K$ augmented prefixes. Stage 2 (PT): forward
+% transformer, operating over the RT-augmented sequence, generates a diversity-aware
+% top-$k$ recommendation list via the diversity--relevance combined score.}
+% \label{fig:trier_framework}
+% \end{figure}
+
+\subsection{Sequence Encoder}
+\label{sec:encoder}
+Both the retrospective (reverse) and prospective (forward) modules share the same transformer-based sequence encoder architecture, differing only in the direction in which they process the sequence.
+
+\subsubsection{Embedding Layer}
+Given an interaction sequence $S_u = (i_1, \dots, i_T)$ of $T$ items drawn from a vocabulary of size $|\mathcal{I}|$, we first encode each item by summing three learnable embedding vectors:
+\begin{equation}
+\mathbf{e}_t = \mathbf{E}_{id}[i_t] + \mathbf{E}_{type}[i_t] + \mathbf{p}_t,
+\end{equation}
+where $\mathbf{E}_{id} \in \mathbb{R}^{(|\mathcal{I}|+1) \times d}$ is the item-ID lookup table (with the additional row reserved for the padding index $0$), $\mathbf{p}_t \in \mathbb{R}^d$ is the positional embedding for position $t$, and $\mathbf{E}_{type}[i_t] \in \mathbb{R}^d$ is the \emph{type embedding} of item $i_t$ that aggregates the item's semantic categories via masked mean pooling (described fully in Section~\ref{sec:type_embeddings}). We set the hidden dimension $d=64$ throughout.
+
+\subsubsection{Self-Attention Module}
+The embedding sequence $\mathbf{e}_{1:T}$ is fed into a $L$-layer stack of transformer encoder blocks~\cite{vaswani2017}. Each block consists of a multi-head self-attention (MHSA) sub-layer followed by a position-wise feed-forward network (FFN), both enclosed in residual connections with layer normalization. For layer $\ell$, the output of the MHSA sub-layer is:
+\begin{equation}
+\mathbf{H}^{(\ell)} = \text{MHSA}(\text{LN}(\mathbf{H}^{(\ell-1)})) + \mathbf{H}^{(\ell-1)},
+\end{equation}
+and the FFN sub-layer produces:
+\begin{equation}
+\mathbf{H}^{(\ell)}_{\text{out}} = \text{FFN}(\text{LN}(\mathbf{H}^{(\ell)})) + \mathbf{H}^{(\ell)},
+\end{equation}
+where LN denotes layer normalization. MHSA computes $H$ parallel scaled dot-product attention heads on projected query, key, and value tensors; we set $H=2$ and $L=2$ for both modules. A dropout rate of $0.5$ is applied to the embedding matrix and each transformer sub-layer for regularization. Following standard causal attention in sequential recommendation, a triangular mask prevents a position from attending to future positions in the forward module (and to \emph{past} positions in the reverse module, analogous to a backward causal mask).
+
+The final hidden state $\mathbf{h}_T = \mathbf{H}^{(L)}_{T}$, corresponding to the last non-padding position of the sequence, is used as the sequence-level representation for next-item scoring.
+
+\subsection{Retrospective Greedy Search}
+\label{sec:rt}
+The Retrospective (RT) module addresses the information shortage in short interaction sequences by learning to predict plausible items that could have appeared at the beginning of the observed history. Concretely, the RT module is a transformer encoder (Section~\ref{sec:encoder}) that processes the \emph{reversed} sequence $\overleftarrow{S}_u = (i_T, i_{T-1}, \dots, i_1)$, i.e., items ordered from most recent to oldest. When the RT model is asked to autoregressively produce $K$ additional tokens \emph{after} position $1$ in the reversed sequence, these tokens correspond semantically to items that \emph{preceded} the earliest observed interaction. We denote the resulting retro-predicted sequence as $R_u = (r_1, r_2, \dots, r_K)$ and obtain the RT-augmented sequence as
+\begin{equation}
+\widetilde{S}_u = (r_K, \dots, r_1, i_1, i_2, \dots, i_T).
+\end{equation}
+
+Training the RT module is framed as a standard autoregressive next-token prediction task on the reversed sequences. Given $\overleftarrow{S}_u[1:t]$, the RT model must predict $\overleftarrow{S}_u[t+1]$ using a cross-entropy loss over the item vocabulary. At convergence, the RT model is able to produce $K$ distinct augmented sequences via beam search of width $M=3$; taking the top-$K=5$ items from each beam candidate yields the final prefixes. We train the RT model independently first to convergence before initializing the PT module, and we freeze its weights during the prospective stage.
+
+\subsection{Prospective Diversity Promoting}
+\label{sec:pt}
+With the RT-augmented sequences in hand, the Prospective (PT) module simultaneously (i)~learns to rank items by relevance for the next-item prediction task and (ii)~learns to generate diverse top-$k$ recommendation lists. The PT module is a forward-direction transformer encoder (Section~\ref{sec:encoder}) with a self-supervised contrastive (NCE) auxiliary loss and a diversity-aware training objective.
+
+\paragraph{Contrastive learning with RT augmentation.}
+The RT module produces $M$ distinct augmented views of each training sequence via beam search. Following DuoRec-style self-supervision~\cite{wang2022duorec}, we treat two RT-augmented views of the same user sequence as a positive pair, and views drawn from different users or from within the same batch as negatives. Denoting the sequence-level representation of view $v$ of user $u$ as $\mathbf{h}_u^{(v)}$ (the final hidden state of the PT encoder), the NCE loss is:
+\begin{equation}
+\mathcal{L}_{nce} = -\log \frac{\sum_{v_1 \neq v_2} \exp(\text{sim}(\mathbf{h}_u^{(v_1)}, \mathbf{h}_u^{(v_2)}) / \tau)}
+                              {\sum_{u'} \sum_{v_1, v_2} \exp(\text{sim}(\mathbf{h}_u^{(v_1)}, \mathbf{h}_{u'}^{(v_2)}) / \tau)},
+\end{equation}
+where $\text{sim}(\cdot,\cdot)$ is the dot product and $\tau=1$ is the temperature. The NCE loss forces the encoder to produce user representations that are invariant to the particular RT augmentation chosen, implicitly capturing the user's latent intent rather than superficial surface details of the sequence.
+
+\paragraph{Diversity-aware generation.}
+At each training step, the PT module runs two generation paths on the same sequence: a \emph{greedy (relevance-only) path}, which ranks items purely by the dot product of the sequence representation with item embeddings, and a \emph{diverse path}, which ranks items by a combined score that interpolates between a relevance score and a diversity score.
+
+The relevance score for candidate item $j$ at step $s$ is simply $\text{rel}(j) = \mathbf{h}_T^\top \mathbf{E}[j]$. The diversity score at step $s$ measures the pairwise category distance between item $j$ and the items already selected in the current list $R_{s-1} = (j_1, \dots, j_{s-1})$, using the Inverse List Diversity (ILD) formulation:
+\begin{equation}
+\text{div}(j; R_{s-1}) = \frac{1}{s-1} \sum_{j' \in R_{s-1}} \lVert \mathbf{c}_j - \mathbf{c}_{j'} \rVert_2,
+\end{equation}
+where $\mathbf{c}_j \in \{0,1\}^{C}$ is the multi-hot category vector of item $j$. The combined score is then
+\begin{equation}
+\label{eq:gen_score}
+\text{score}(j; R_{s-1}) = \lambda \cdot \text{div}(j; R_{s-1}) + (1-\lambda) \cdot \text{rel}(j),
+\end{equation}
+where $\lambda \in [0,1]$ controls the trade-off between diversity and relevance. Setting $\lambda = 0$ recovers pure relevance ranking (the ``nodiv'' baseline), while higher values increasingly favor items from underrepresented categories.
+
+\subsection{Dense Next-Item Supervision}
+\label{sec:dense}
+The relevance objective inherited from DuoRec supervises only the terminal position: given the input prefix $(i_1, \dots, i_{T-1})$, the PT encoder is asked to predict the single held-out item $i_T$ from the final hidden state $\mathbf{h}_T$. A sequence of length $T$ thus contributes exactly one next-item cross-entropy signal regardless of how many valid transitions it contains, while the intermediate hidden states $\mathbf{h}_1, \dots, \mathbf{h}_{T-1}$ receive no direct next-item gradient and are shaped only indirectly through the terminal prediction. We argue that this underuses the supervision available in every sequence, which is especially costly in two regimes central to our study: short and sparse interaction logs, where one terminal label per user is a weak and noisy anchor; and the prospective module itself, whose causal encoder produces a well-defined predictive distribution at \emph{every} position but is penalized at only one.
+
+We therefore adopt \emph{dense} next-item supervision: rather than predicting only $i_T$, the PT model predicts the next item at every non-padding position. Concretely, for the input prefix $(i_1, \dots, i_{T-1})$ we form the shifted target sequence $(i_2, \dots, i_T)$ and apply cross-entropy at each position $t$,
+\begin{equation}
+\label{eq:dense_ce}
+\mathcal{L}_{ce} = -\frac{1}{\sum_{u} N_u} \sum_{u} \sum_{t=1}^{T_u-1} \mathbb{1}[i_{t+1} \neq 0]\,
+\log \frac{\exp\!\bigl(\mathbf{h}_{u,t}^{\top} \mathbf{w}_{i_{t+1}}\bigr)}
+       {\sum_{j \in \mathcal{I}} \exp\!\bigl(\mathbf{h}_{u,t}^{\top} \mathbf{w}_j\bigr)},
+\end{equation}
+where $\mathbf{w}_j$ is the $j$-th row of the combined item weight matrix (Section~\ref{sec:type_embeddings}), $N_u = \sum_t \mathbb{1}[i_{t+1}\neq 0]$ is the number of valid (non-padding) prediction positions for user $u$, and the indicator masks padded positions. Dense supervision converts each length-$T$ sequence from a single training example into $T-1$ next-item examples, matching the per-position learning signal used by unidirectional language-model style recommenders while preserving TRIER's RT augmentation and diversity objectives. At inference nothing changes: ranking still uses the terminal hidden state $\mathbf{h}_T$, so the added cost is confined to training.
+
+\paragraph{Memory-efficient chunking.} A direct implementation materializes the full logit tensor $\mathbb{R}^{B \times T \times |\mathcal{I}|}$; for our longest sequences over the largest catalog this exceeds $10$\,GB and exhausts GPU memory. We instead compute the logits in chunks of $c{=}8$ sequence positions: within each chunk we form the $\mathbb{R}^{B \times c \times |\mathcal{I}|}$ logits, apply softmax, and gather the target log-probability before discarding the chunk and proceeding to the next. Peak activation memory is therefore $\mathcal{O}(B \cdot c \cdot |\mathcal{I}|)$ rather than $\mathcal{O}(B \cdot T \cdot |\mathcal{I}|)$, reducing the worst-case footprint by an order of magnitude with bit-identical numerical results.
+
+\subsection{Diversity Promoting Loss}
+\label{sec:diversity}
+The diversity loss compares the diversity achieved by the diverse path (driven by the interpolated score of Eq.~\ref{eq:gen_score}) with the diversity of the greedy path, while explicitly penalizing configurations in which the diverse list is significantly more accurate (a paradoxical signal that the greedy path is learning poorly). Concretely, let $\text{ILD}(R)$ be the average pairwise category distance in list $R$, $R^{greedy}$ the list generated by the relevance-only path, and $R^{div}$ the list generated by the combined-score path. Let $P$ and $P_{greedy}$ be the joint ground-truth probabilities of the items in each list. The diversity loss is:
+\begin{equation}
+\label{eq:div_loss}
+\mathcal{L}_{div} = -\bigl(\text{ILD}(R^{div}) - \text{ILD}(R^{greedy})\bigr)
+                   \cdot \log\Bigl(1 + \exp\bigl((P - P_{greedy}) / 10\bigr)\Bigr).
+\end{equation}
+When the diverse path produces a meaningfully more diverse list ($\text{ILD}(R^{div}) > \text{ILD}(R^{greedy})$) and the probability gap is not catastrophically large, $\mathcal{L}_{div}$ is negative (a ``reward'') and backpropagation encourages this behavior. Conversely, when the diverse path collapses into the greedy path (difference near zero) or is trained so aggressively that relevance degrades excessively, the loss becomes positive (a ``penalty'') and the gradient steers the model back toward relevance.
+
+In addition to the overall ILD-based loss, we optionally add a \emph{consecutive similarity} loss that discourages near-duplicate adjacent items in the generated list:
+\begin{equation}
+\mathcal{L}_{consec} = \frac{1}{k-1} \sum_{s=2}^{k} \max\bigl(0, \cos(\mathbf{c}_{j_s}, \mathbf{c}_{j_{s-1}}) - 0.5\bigr),
+\end{equation}
+where $0.5$ is a margin and $\cos(\cdot,\cdot)$ denotes cosine similarity between multi-hot category vectors. The consecutive loss is weighted by $\lambda_{consec}=0.01$ by default and can be ablated via a dedicated flag.
+
+The final training objective of the PT module is the sum of four terms:
+\begin{equation}
+\mathcal{L} = \mathcal{L}_{ce} + \mathcal{L}_{nce} + \mathcal{L}_{div} + \lambda_{consec} \cdot \mathcal{L}_{consec},
+\end{equation}
+where $\mathcal{L}_{ce}$ is the dense multi-position next-item cross-entropy loss of Eq.~\ref{eq:dense_ce} (reducing to terminal-only supervision when dense supervision is disabled). Note that $\mathcal{L}_{div}$ enters at full strength regardless of $\lambda$, because the training objective is to shape the item embedding space so that diverse generation is possible; the parameter $\lambda$ then only controls how much diversity is requested at \emph{inference} time, offering a tunable knob between the two extremes without retraining.
+
+\subsection{Type-Enriched Item Representations}
+\label{sec:type_embeddings}
+A natural observation is that the diversity objectives of Section~\ref{sec:diversity} operate directly in the \emph{category space} (ILD uses category vectors, CS and CC use category assignments). It is therefore beneficial to make the item encoder itself aware of category structure, rather than relying purely on ID co-occurrence statistics. To this end, we incorporate learnable \emph{type embeddings} into the item representation, inspired by the attribute-embedding approach of RecFormer~\cite{li2023text} but adapted to categorical metadata instead of textual attributes.
+
+For each item $j \in \mathcal{I}$ we retrieve its category set $\mathcal{T}(j) = \{t_1, \dots, t_{|\mathcal{T}(j)|}\}$ from the dataset's item--category mapping (KuaiRec provides $C=31$ semantic categories per item, with zero, one, or multiple assignments). We introduce a type embedding table $\mathbf{E}_{type}^{(cat)} \in \mathbb{R}^{(C+1) \times d}$ whose extra row is a padding index for items with no annotated categories. The type contribution for item $j$ is the masked mean pool of its category embeddings:
+\begin{equation}
+\mathbf{E}_{type}[j] =
+\begin{cases}
+\frac{1}{|\mathcal{T}(j)|} \sum_{t \in \mathcal{T}(j)} \mathbf{E}_{type}^{(cat)}[t], & |\mathcal{T}(j)| > 0, \\
+\mathbf{0}, & \text{otherwise}.
+\end{cases}
+\end{equation}
+This representation is then added to the ID embedding, as already shown in the embedding layer (Section~\ref{sec:encoder}). Crucially, the same type enrichment is applied to the output scoring space: when we compute item scores via the inner product with the encoder's final hidden state, we use the combined weight matrix $\mathbf{E}_{combined} = \mathbf{E}_{id} + \mathbf{E}_{type}$ in place of $\mathbf{E}_{id}$ alone. This ensures category-level signals propagate consistently through both encoding and scoring.
+
+The type embedding table adds only $(C+1) \cdot d = 32 \times 64 = 2{,}048$ parameters to the model, yet provides a strong inductive bias: items belonging to the same category are automatically pushed closer together in the representation space, which helps the diversity loss and ILD metrics operate on the same semantic footing. As shown in the ablation study, this improves the consistency of the diversity--relevance trade-off across the four dataset variants.
