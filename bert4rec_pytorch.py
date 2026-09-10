@@ -69,33 +69,40 @@ class BERT4RecModel(nn.Module):
         return logits
 
     def mask_sequence(self, input_seq):
-        """Randomly mask tokens for MLM training.
-        Returns: (masked_seq, mask_positions, mask_targets)
-        Each of shape (B, L), (B, num_masks), (B, num_masks)
+        """Vectorized MLM masking for the whole batch at once.
+        Returns: (masked_seq, mask_mask, targets) all on the same device as input_seq.
+          masked_seq: (B, L) with mask_token substituted
+          mask_mask:  (B, L) bool — True where masked
+          targets:    (B, L) original item IDs (0 where not masked)
         """
         B, L = input_seq.shape
-        masked_seq = input_seq.clone()
-        mask_positions = []
-        mask_targets = []
+        device = input_seq.device
 
+        # Valid (non-pad) positions
+        valid = input_seq > 0  # (B, L)
+        n_valid = valid.sum(dim=1)  # (B,)
+        n_masks = torch.clamp((n_valid.float() * self.mask_prob).round().long(), min=1)
+
+        # Random scores per position, set invalid positions to -1 so they're never selected
+        rand = torch.rand(B, L, device=device) * valid.float()
+        # Keep only top-n_masks per row
+        # Use a large negative for invalid positions
+        rand = rand + (1 - valid.float()) * -1e9
+
+        mask_mask = torch.zeros(B, L, dtype=torch.bool, device=device)
         for b in range(B):
-            valid_mask = input_seq[b] > 0  # non-pad
-            valid_indices = torch.where(valid_mask)[0]
-            if len(valid_indices) == 0:
-                mask_positions.append(torch.tensor([], dtype=torch.long))
-                mask_targets.append(torch.tensor([], dtype=torch.long))
-                continue
+            nm = int(n_masks[b].item())
+            if nm > 0:
+                topk_idx = rand[b].topk(nm).indices
+                mask_mask[b, topk_idx] = True
 
-            num_masks = max(1, int(len(valid_indices) * self.mask_prob))
-            selected = torch.randperm(len(valid_indices))[:num_masks]
-            pos = valid_indices[selected]
-            targets = input_seq[b, pos].clone()
-            masked_seq[b, pos] = self.mask_token
+        targets = input_seq.clone()
+        targets[~mask_mask] = 0  # only masked positions have targets
 
-            mask_positions.append(pos.cpu())
-            mask_targets.append(targets.cpu())
+        masked_seq = input_seq.clone()
+        masked_seq[mask_mask] = self.mask_token
 
-        return masked_seq, mask_positions, mask_targets
+        return masked_seq, mask_mask, targets
 
 
 def load_sequences(data_file):
@@ -138,7 +145,8 @@ def create_batches(inputs, batch_size):
 
 
 def train_bert4rec(train_file, test_file, item_num, epochs=500, batch_size=64,
-                   lr=0.001, maxlen=50, device='cuda', ckpt_dir='.'):
+                   lr=0.001, maxlen=50, device='cuda', ckpt_dir='.',
+                   valid_file=None, patience=0):
     set_seed(42)
     print(f'Loading training data...')
     train_sequences = load_sequences(train_file)
@@ -149,6 +157,14 @@ def train_bert4rec(train_file, test_file, item_num, epochs=500, batch_size=64,
 
     train_batches = create_batches(inputs, batch_size)
     print(f'{len(train_batches)} batches of size {batch_size}')
+
+    # Validation batches for early stopping
+    valid_batches = []
+    if valid_file and patience > 0:
+        valid_sequences = load_sequences(valid_file)
+        valid_inputs, _ = create_train_data(valid_sequences, maxlen=maxlen)
+        valid_batches = create_batches(valid_inputs, batch_size)
+        print(f'Validation: {len(valid_batches)} batches')
 
     model = BERT4RecModel(
         item_num=item_num,
@@ -167,6 +183,7 @@ def train_bert4rec(train_file, test_file, item_num, epochs=500, batch_size=64,
 
     best_loss = float('inf')
     best_epoch = 0
+    patience_counter = 0
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -177,44 +194,64 @@ def train_bert4rec(train_file, test_file, item_num, epochs=500, batch_size=64,
         for batch in train_batches:
             batch = batch.to(device)
 
-            # Mask random tokens
-            masked_batch, mask_pos_list, mask_tgt_list = model.mask_sequence(batch)
+            # Vectorized masking (no per-sample Python loop)
+            masked_batch, mask_mask, targets = model.mask_sequence(batch)
 
             logits = model(masked_batch)  # (B, L, item_num+1)
 
-            # Compute loss only on masked positions
-            loss = torch.tensor(0.0, device=device)
-            total_preds = 0
-            for b in range(batch.size(0)):
-                pos = mask_pos_list[b]
-                tgt = mask_tgt_list[b]
-                if len(pos) > 0:
-                    pos = pos.to(device)
-                    tgt = tgt.to(device)
-                    pred_logits = logits[b, pos, :]  # (M, item_num+1)
-                    loss = loss + criterion(pred_logits, tgt)
-                    total_preds += len(pos)
-
-            if total_preds > 0:
-                loss = loss / total_preds
+            # Vectorized loss: flatten masked positions, CE with ignore_index=0
+            # targets has 0 at non-masked positions, so ignore_index=0 skips them
+            loss = criterion(
+                logits.view(-1, logits.size(-1)),    # (B*L, item_num+1)
+                targets.view(-1)                      # (B*L,)
+            )
 
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             optimizer.step()
 
-            total_loss += loss.item() * total_preds
-            num_masked += total_preds
+            n_masked = mask_mask.sum().item()
+            total_loss += loss.item() * n_masked
+            num_masked += n_masked
 
         avg_loss = total_loss / max(num_masked, 1)
 
-        if avg_loss < best_loss:
-            best_loss = avg_loss
+        # Validation for early stopping
+        eval_loss = avg_loss
+        if valid_batches:
+            model.eval()
+            v_loss, v_masked = 0.0, 0
+            with torch.no_grad():
+                for batch in valid_batches:
+                    batch = batch.to(device)
+                    masked_batch, mask_mask, targets = model.mask_sequence(batch)
+                    logits = model(masked_batch)
+                    loss = criterion(
+                        logits.view(-1, logits.size(-1)),
+                        targets.view(-1)
+                    )
+                    n = mask_mask.sum().item()
+                    v_loss += loss.item() * n
+                    v_masked += n
+            eval_loss = v_loss / max(v_masked, 1)
+
+        improved = eval_loss < best_loss
+        if improved:
+            best_loss = eval_loss
             best_epoch = epoch
             torch.save(model.state_dict(), ckpt_path)
+            patience_counter = 0
+        else:
+            patience_counter += 1
 
-        print(f'Epoch {epoch}/{epochs}, MLM Loss: {avg_loss:.4f}, '
+        val_tag = f', Val Loss: {eval_loss:.4f}' if valid_batches else ''
+        print(f'Epoch {epoch}/{epochs}, MLM Loss: {avg_loss:.4f}{val_tag}, '
               f'Best: {best_loss:.4f} (ep {best_epoch})')
+
+        if patience > 0 and patience_counter >= patience:
+            print(f'Early stopping at epoch {epoch} (no improvement for {patience} epochs)')
+            break
 
     if os.path.exists(ckpt_path):
         model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
@@ -298,6 +335,8 @@ def main():
     parser.add_argument('--eval_only', action='store_true', help='Skip training, only evaluate saved checkpoint')
     parser.add_argument('--ckpt_path', default='bert4rec_best.pth', help='Path to checkpoint file')
     parser.add_argument('--ckpt_dir', default='.', help='Directory to save checkpoint')
+    parser.add_argument('--valid_file', default=None, help='Validation file for early stopping')
+    parser.add_argument('--patience', type=int, default=0, help='Early stop after N epochs without improvement (0=off)')
     args = parser.parse_args()
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -331,7 +370,8 @@ def main():
             args.train_file, args.test_file, args.item_num,
             epochs=args.epochs, batch_size=args.batch_size,
             lr=args.lr, maxlen=args.maxlen, device=device,
-            ckpt_dir=ckpt_dir
+            ckpt_dir=ckpt_dir,
+            valid_file=args.valid_file, patience=args.patience
         )
         train_time = time.time() - start_time
         # Save checkpoint to ckpt_dir

@@ -84,9 +84,11 @@ for VAR in "${VARIANTS[@]}"; do
         echo "[BERT4Rec] training..."
         python3 bert4rec_pytorch.py \
             --train_file "${DATA_DIR}/train-v0.txt" \
+            --valid_file "${DATA_DIR}/valid-v0.txt" \
             --test_file "${DATA_DIR}/test-v0.txt" \
             --item_num ${ITEM_NUM} \
             --epochs ${EPOCHS} --batch_size ${BATCH} --lr 1e-3 --maxlen ${MAXLEN} \
+            --patience 100 \
             --ckpt_dir "${BERT_DIR}" \
             --output "${OUT_DIR}/bert4rec_results.txt" 2>&1 | tee "train_bert4rec_${VAR}.log"
     fi
