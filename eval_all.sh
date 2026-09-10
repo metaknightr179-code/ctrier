@@ -77,26 +77,21 @@ for VAR in "${VARIANTS[@]}"; do
         echo "[SASRec] No checkpoint — skip"
     fi
 
-    # BERT4Rec
-    BERT_DIR="./save_bert4rec_${VAR}"
-    if [ -f "${BERT_DIR}/bert4rec_best.pth" ]; then
-        echo "[BERT4Rec] Evaluating..."
-        CUDA_VISIBLE_DEVICES=${GPU} python3 bert4rec_pytorch.py \
-            --eval_only --ckpt_dir "${BERT_DIR}" \
+    # FPMC
+    FPMC_DIR="./save_fpmc_${VAR}"
+    if [ -f "${FPMC_DIR}/fpmc_best.pth" ]; then
+        echo "[FPMC] Evaluating..."
+        CUDA_VISIBLE_DEVICES=${GPU} python3 fpmc_pytorch.py \
+            --eval_only --ckpt_dir "${FPMC_DIR}" \
             --test_file "${DATA_DIR}/test-v0.txt" \
             --item_num ${ITEM_NUM} \
             --maxlen ${MAXLEN} \
-            --output "${OUTPUT_DIR}/bert4rec_results.txt" 2>&1 | tee "eval_bert4rec_${VAR}.log"
-    elif [ -f "./bert4rec_best.pth" ]; then
-        echo "[BERT4Rec] Using shared checkpoint..."
-        CUDA_VISIBLE_DEVICES=${GPU} python3 bert4rec_pytorch.py \
-            --eval_only --ckpt_path "bert4rec_best.pth" --ckpt_dir "." \
-            --test_file "${DATA_DIR}/test-v0.txt" \
-            --item_num ${ITEM_NUM} \
-            --maxlen ${MAXLEN} \
-            --output "${OUTPUT_DIR}/bert4rec_results.txt" 2>&1 | tee "eval_bert4rec_${VAR}.log"
+            --cat "${DATA_DIR}/kuairec_cate.txt" \
+            --n_cat ${N_CAT} \
+            --vec "./KuaiRec_variants/kuairec_vec.npy" \
+            --output "${OUTPUT_DIR}/fpmc_results.txt" 2>&1 | tee "eval_fpmc_${VAR}.log"
     else
-        echo "[BERT4Rec] No checkpoint — skip"
+        echo "[FPMC] No checkpoint — skip"
     fi
 
     echo "=== ${VAR} baselines complete ==="

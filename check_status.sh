@@ -22,7 +22,7 @@ CONFIGS=(nodiv lamb0002 lamb0005 lamb0005_consec0001 lamb0005_consec005 lamb0005
 echo "============================================================"
 echo " BASELINES (target: ${BASELINE_EPOCHS} epochs or early-stopped)"
 echo "============================================================"
-for model in sasrec gru4rec bert4rec; do
+for model in sasrec gru4rec fpmc; do
     for VAR in "${VARIANTS[@]}"; do
         DIR="save_${model}_${VAR}"
         LOG="train_${model}_${VAR}.log"
@@ -143,7 +143,7 @@ echo " SUMMARY"
 echo "============================================================"
 # Baselines
 b_done=0; b_partial=0; b_not=0
-for model in sasrec gru4rec bert4rec; do
+for model in sasrec gru4rec fpmc; do
     for VAR in "${VARIANTS[@]}"; do
         DIR="save_${model}_${VAR}"
         LOG="train_${model}_${VAR}.log"
