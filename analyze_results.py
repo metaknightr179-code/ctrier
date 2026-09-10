@@ -25,6 +25,7 @@ Usage:
     python3 analyze_results.py --dataset MicroLens       # MicroLens only
     python3 analyze_results.py --dataset all             # everything
     python3 analyze_results.py --proto small             # small-matrix only
+    python3 analyze_results.py --dataset kuairec --dense_only  # dense KuaiRec only
 """
 
 import os
@@ -167,8 +168,12 @@ def split_dir_name(dirname, variant_keys=None):
     return None
 
 
-def collect_all_results(proto_filter=None, variant_keys=None):
-    """Return list of dicts: {family, config, variant, proto, label, data}."""
+def collect_all_results(proto_filter=None, variant_keys=None, dense_only=False):
+    """Return list of dicts: {family, config, variant, proto, label, data}.
+
+    If dense_only=True, only include dirs whose name contains 'dense'
+    (i.e. save_pt_dense_* / save_pt_notype_dense_*).
+    """
     if variant_keys is None:
         variant_keys = VARIANT_KEYS
     rows = []
@@ -181,6 +186,8 @@ def collect_all_results(proto_filter=None, variant_keys=None):
     #   test_result_topk_small.txt  small matrix; topk full-catalog ranking
     for path in sorted(glob.glob(os.path.join(SCRIPT_DIR, "save_*", "test_result*.txt"))):
         dirname = os.path.basename(os.path.dirname(path))
+        if dense_only and "dense" not in dirname:
+            continue
         basename = os.path.basename(path)
         if basename == "test_result.txt":
             proto, fname_infer = "big", None
@@ -576,6 +583,8 @@ def main():
     parser.add_argument("--dataset", default="kuairec",
                         choices=list(DATASETS.keys()) + ["all"],
                         help="Which dataset to analyze (default: kuairec)")
+    parser.add_argument("--dense_only", action="store_true",
+                        help="Only show dense checkpoints (save_pt_dense_* / save_pt_notype_dense_*)")
     args = parser.parse_args()
 
     # Collect variant keys for the selected dataset(s)
@@ -590,7 +599,8 @@ def main():
         ds_label = ds_info["label"]
 
     print(f"Collecting results for {ds_label}...")
-    rows = collect_all_results(proto_filter=args.proto, variant_keys=variant_keys)
+    rows = collect_all_results(proto_filter=args.proto, variant_keys=variant_keys,
+                               dense_only=args.dense_only)
     print(f"Found {len(rows)} result files\n")
 
     if not rows:
