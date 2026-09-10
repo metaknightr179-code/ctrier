@@ -232,7 +232,7 @@ def collect_all_results(proto_filter=None, variant_keys=None, dense_only=False):
         if variant not in variant_keys:
             continue
         basename = os.path.basename(path)                 # sasrec_results.txt / sasrec_results_small.txt
-        m = re.match(r'^(sasrec|gru4rec|fpmc)_results(_small)?\.txt$', basename)
+        m = re.match(r'^(sasrec|gru4rec|bert4rec)_results(_small)?\.txt$', basename)
         if not m:
             continue
         model = m.group(1)
@@ -286,7 +286,7 @@ def get_metric(data, metric):
 def model_label(row):
     fam, cfg = row["family"], row["config"]
     if fam == "baseline":
-        return {"sasrec": "SASRec", "gru4rec": "GRU4Rec", "fpmc": "FPMC"}.get(cfg, cfg)
+        return {"sasrec": "SASRec", "gru4rec": "GRU4Rec", "bert4rec": "BERT4Rec"}.get(cfg, cfg)
     if fam == "duorec":
         return "DuoRec"
     if fam == "gru_trier":
@@ -300,7 +300,7 @@ def model_label(row):
 def sort_key(row):
     fam_order = FAMILY_ORDER.get(row["family"], 9)
     if row["family"] == "baseline":
-        cfg_order = {"sasrec": 0, "gru4rec": 1, "fpmc": 2}.get(row["config"], 9)
+        cfg_order = {"sasrec": 0, "gru4rec": 1, "bert4rec": 2}.get(row["config"], 9)
     elif row["family"] == "duorec":
         cfg_order = -1
     else:
@@ -368,7 +368,7 @@ def tex_model_label(fam, cfg, infer):
     """Compact paper-style model label for LaTeX table columns."""
     if fam == "baseline":
         base = {"sasrec": "SASRec", "gru4rec": "GRU4Rec",
-                "fpmc": "FPMC"}.get(cfg, cfg)
+                "bert4rec": "BERT4Rec"}.get(cfg, cfg)
     elif fam == "duorec":
         base = "DuoRec"
     elif fam == "gru_trier":

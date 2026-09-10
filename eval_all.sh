@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
-# Big-matrix evaluation of baselines (GRU4Rec, SASRec, BERT4Rec) on KuaiRec.
-# For TRIER dense PT evaluation, use eval_dense_kuairec.sh instead.
+# Big-matrix evaluation of baselines (GRU4Rec, SASRec) on KuaiRec.
+# BERT4Rec: bash eval_bert4rec_big.sh   (TRIER PT: eval_dense_kuairec.sh)
 #
 # Usage:
 #   bash eval_all.sh
@@ -77,22 +77,7 @@ for VAR in "${VARIANTS[@]}"; do
         echo "[SASRec] No checkpoint — skip"
     fi
 
-    # FPMC
-    FPMC_DIR="./save_fpmc_${VAR}"
-    if [ -f "${FPMC_DIR}/fpmc_best.pth" ]; then
-        echo "[FPMC] Evaluating..."
-        CUDA_VISIBLE_DEVICES=${GPU} python3 fpmc_pytorch.py \
-            --eval_only --ckpt_dir "${FPMC_DIR}" \
-            --test_file "${DATA_DIR}/test-v0.txt" \
-            --item_num ${ITEM_NUM} \
-            --maxlen ${MAXLEN} \
-            --cat "${DATA_DIR}/kuairec_cate.txt" \
-            --n_cat ${N_CAT} \
-            --vec "./KuaiRec_variants/kuairec_vec.npy" \
-            --output "${OUTPUT_DIR}/fpmc_results.txt" 2>&1 | tee "eval_fpmc_${VAR}.log"
-    else
-        echo "[FPMC] No checkpoint — skip"
-    fi
+    # NOTE: BERT4Rec is evaluated standalone via eval_bert4rec_big.sh
 
     echo "=== ${VAR} baselines complete ==="
     echo ""
