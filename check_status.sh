@@ -16,7 +16,7 @@ VARIANTS=(
     kuairec_first_average
 )
 
-CONFIGS=(nodiv lamb0002 lamb0005 lamb0005_consec0001 lamb001 lamb005 lamb01)
+CONFIGS=(nodiv lamb0002 lamb0005 lamb0005_consec0001 lamb0005_consec005 lamb0005_consec01 lamb001 lamb005 lamb01)
 
 # ---- Baselines (SASRec, GRU4Rec, BERT4Rec) ----
 echo "============================================================"
