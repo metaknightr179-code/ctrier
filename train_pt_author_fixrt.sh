@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# PT author-ablation stage (diversity sweep), parallel GPU execution.
+# PT author-ablation stage, single setting: lambda = 0.005 (no sweep).
 #
 # Two new PT families, both trained WITH additive author embeddings
 # (-author_file ./KuaiRec_variants/kuairec_author.txt -n_author 8369):
@@ -10,8 +10,10 @@
 #                                                              (compare vs type)
 #
 # Ablation ladder:
-#   notype (save_pt_notype_fixrt_*)  <  author (save_pt_author_fixrt_*)
-#   type   (save_pt_fixrt_*)         <  typeauthor (save_pt_typeauthor_fixrt_*)
+#   notype (save_pt_notype_dense_lamb0005_*) < author     (save_pt_author_fixrt_lamb0005_*)
+#   type   (save_pt_dense_lamb0005_*)        < typeauthor (save_pt_typeauthor_fixrt_lamb0005_*)
+#
+# 8 runs total: 2 families x 1 config (lamb=0.005) x 4 variants.
 #
 # RT checkpoints are SHARED with the existing fixrt pipeline (save_rt_fix_<variant>);
 # the RT model has no side-info layers. Author PTs must be trained from scratch
@@ -34,17 +36,9 @@ VARIANTS=(
     kuairec_first_average
 )
 
-# SUFFIX|LAMB|LMD_CONSEC
+# SUFFIX|LAMB|LMD_CONSEC  — author ablation uses ONLY lambda = 0.005
 CONFIGS=(
-    "nodiv|0|0"
-    "lamb0002|0.002|0"
     "lamb0005|0.005|0"
-    "lamb0005_consec0001|0.005|0.001"
-    "lamb0005_consec005|0.005|0.05"
-    "lamb0005_consec01|0.005|0.1"
-    "lamb001|0.01|0"
-    "lamb005|0.05|0"
-    "lamb01|0.1|0"
 )
 
 # FAMILY|DIR_PREFIX|TYPE_FLAG (author flags appended to every run)

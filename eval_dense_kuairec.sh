@@ -3,6 +3,8 @@
 # Evaluation for DENSE multi-position-supervision KuaiRec checkpoints.
 #   save_pt_dense_<config>_<variant>         (dense, type embeddings ON)
 #   save_pt_notype_dense_<config>_<variant>  (dense, -no_type)
+#   save_pt_author_fixrt_lamb0005_<variant>     (dense, -no_type + author, ONLY lamb=0.005)
+#   save_pt_typeauthor_fixrt_lamb0005_<variant> (dense, type + author,  ONLY lamb=0.005)
 #
 # NOTE: -dense is NOT passed at eval: test_forward always gathers the last
 # position; dense only changes the training loss/forward. Checkpoint weights
@@ -49,6 +51,13 @@ FAMILIES=(
     "notype|save_pt_notype_dense_|-no_type"
 )
 
+# Author-ablation families run ONLY lamb0005 and need the author args at load.
+AUTHOR_FAMILIES=(
+    "author|save_pt_author_fixrt_|-no_type"
+    "typeauthor|save_pt_typeauthor_fixrt_|"
+)
+AUTHOR_EXTRA="-author_file ./KuaiRec_variants/kuairec_author.txt -n_author 8369"
+
 get_latest_epoch() {
     ls "${1}"/duorec-*.pth 2>/dev/null | sed 's/.*duorec-//;s/\.pth//' | sort -n | tail -1
 }
@@ -58,9 +67,9 @@ mkdir -p "$STAGE_BASE" ./rt_dummy_for_duorec
 
 run_eval () {
     # $1=PT_DIR $2=LATEST $3=VAR_DIR $4=EF(test) $5=EN(neg) $6=TYPE_FLAG
-    # $7=MODE(topk|greedy) $8=RT_DIR("" for topk) $9=OUT $10=TAG
+    # $7=MODE(topk|greedy) $8=RT_DIR("" for topk) $9=OUT $10=TAG $11=EXTRA_FLAGS
     local PT_DIR="$1" LATEST="$2" VAR_DIR="$3" EF="$4" EN="$5" TYPE_FLAG="$6"
-    local MODE="$7" RT_DIR="$8" OUT="$9" TAG="${10}"
+    local MODE="$7" RT_DIR="$8" OUT="$9" TAG="${10}" EXTRA_FLAGS="${11:-}"
 
     # Skip if up-to-date (delete the result file to force re-eval)
     local NEWER
@@ -89,7 +98,7 @@ run_eval () {
         -cat "${VAR_DIR}/kuairec_cate.txt" \
         -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
         -m test -e ${LATEST} -b 256 \
-        ${TYPE_FLAG} ${DIV_FLAG} -t_mode ${MODE} \
+        ${TYPE_FLAG} ${EXTRA_FLAGS} ${DIV_FLAG} -t_mode ${MODE} \
         -start_epoch ${LATEST} -epoch_step 1 \
         -i "$IN_DIR" -o "$STAGE" 2>&1 | tail -2
 
@@ -101,9 +110,20 @@ run_eval () {
     fi
 }
 
-for FAM in "${FAMILIES[@]}"; do
+# Two groups: dense sweeps all 9 configs; author families run only lamb0005.
+for GROUP in dense author; do
+  if [ "$GROUP" = "dense" ]; then
+    CFGS=("${CONFIGS[@]}")
+    FAMS=("${FAMILIES[@]}")
+    EXTRA=""
+  else
+    CFGS=("lamb0005|0.005|0")
+    FAMS=("${AUTHOR_FAMILIES[@]}")
+    EXTRA="$AUTHOR_EXTRA"
+  fi
+for FAM in "${FAMS[@]}"; do
     IFS='|' read -r FAM_NAME DIR_PREFIX TYPE_FLAG <<< "$FAM"
-    for CFG in "${CONFIGS[@]}"; do
+    for CFG in "${CFGS[@]}"; do
         IFS='|' read -r SUFFIX LAMB CONSEC <<< "$CFG"
         for VAR in "${VARIANTS[@]}"; do
             PT_DIR="./${DIR_PREFIX}${SUFFIX}_${VAR}"
@@ -121,7 +141,7 @@ for FAM in "${FAMILIES[@]}"; do
                 "${VAR_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt" \
                 "$TYPE_FLAG" "topk" "" \
                 "${PT_DIR}/test_result_topk.txt" \
-                "${FAM_NAME}_${SUFFIX}_${VAR}_topk_big"
+                "${FAM_NAME}_${SUFFIX}_${VAR}_topk_big" "$EXTRA"
 
             # 2. top-k, small matrix
             if [ -f "${SMALL_DIR}/test-v0.txt" ]; then
@@ -130,7 +150,7 @@ for FAM in "${FAMILIES[@]}"; do
                     "${SMALL_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt" \
                     "$TYPE_FLAG" "topk" "" \
                     "${PT_DIR}/test_result_topk_small.txt" \
-                    "${FAM_NAME}_${SUFFIX}_${VAR}_topk_small"
+                    "${FAM_NAME}_${SUFFIX}_${VAR}_topk_small" "$EXTRA"
             else
                 echo "SKIP small topk: ${SMALL_DIR}/test-v0.txt missing"
             fi
@@ -142,7 +162,7 @@ for FAM in "${FAMILIES[@]}"; do
                     "${VAR_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt" \
                     "$TYPE_FLAG" "greedy" "$RT_DIR" \
                     "${PT_DIR}/test_result.txt" \
-                    "${FAM_NAME}_${SUFFIX}_${VAR}_greedy_big"
+                    "${FAM_NAME}_${SUFFIX}_${VAR}_greedy_big" "$EXTRA"
             else
                 echo "SKIP greedy big: RT missing in ${RT_DIR}/model"
             fi
@@ -154,11 +174,12 @@ for FAM in "${FAMILIES[@]}"; do
                     "${SMALL_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt" \
                     "$TYPE_FLAG" "greedy" "$RT_DIR" \
                     "${PT_DIR}/test_result_small.txt" \
-                    "${FAM_NAME}_${SUFFIX}_${VAR}_greedy_small"
+                    "${FAM_NAME}_${SUFFIX}_${VAR}_greedy_small" "$EXTRA"
             fi
             echo ""
         done
     done
 done
+done
 
-echo "ALL DENSE KUAIREC EVALS DONE"
+echo "ALL DENSE KUAIREC EVALS DONE (dense + author@lamb0005)"

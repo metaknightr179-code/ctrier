@@ -17,6 +17,8 @@ VARIANTS=(
 )
 
 CONFIGS=(nodiv lamb0002 lamb0005 lamb0005_consec0001 lamb0005_consec005 lamb0005_consec01 lamb001 lamb005 lamb01)
+# Author ablation runs only lambda=0.005 (no sweep)
+AUTHOR_CONFIGS=(lamb0005)
 
 # ---- Baselines (SASRec, GRU4Rec, BERT4Rec) ----
 echo "============================================================"
@@ -114,7 +116,7 @@ echo " PT AUTHOR FAMILIES (target: ${MAX_EPOCHS} epochs or early-stopped)"
 echo "============================================================"
 for FAM in "author|save_pt_author_fixrt_|" "typeauthor|save_pt_typeauthor_fixrt_|"; do
     IFS='|' read -r FAM_NAME DIR_PREFIX FLAG <<< "$FAM"
-    for CFG in "${CONFIGS[@]}"; do
+    for CFG in "${AUTHOR_CONFIGS[@]}"; do
         for VAR in "${VARIANTS[@]}"; do
             DIR="${DIR_PREFIX}${CFG}_${VAR}"
             LOG="${DIR}/train_result.txt"
@@ -170,13 +172,19 @@ for VAR in "${VARIANTS[@]}"; do
 done
 echo "  RT: ${rt_done} done / ${rt_partial} partial / ${rt_not} not started (of 4)"
 
-# PT all families
-for LABEL in "dense:save_pt_dense_:save_pt_notype_dense_" \
-             "author:save_pt_author_fixrt_:save_pt_typeauthor_fixrt_"; do
-    IFS=':' read -r PNAME P1 P2 <<< "$LABEL"
+# PT all families. Dense sweeps all 9 configs; author only lamb0005.
+# LABEL: name|prefix1|prefix2|num_configs
+for LABEL in "dense|save_pt_dense_|save_pt_notype_dense_|${#CONFIGS[@]}" \
+             "author|save_pt_author_fixrt_|save_pt_typeauthor_fixrt_|${#AUTHOR_CONFIGS[@]}"; do
+    IFS='|' read -r PNAME P1 P2 N_CFG <<< "$LABEL"
+    if [ "$PNAME" = "author" ]; then
+        CFGS=("${AUTHOR_CONFIGS[@]}")
+    else
+        CFGS=("${CONFIGS[@]}")
+    fi
     pt_done=0; pt_partial=0; pt_not=0
     for DIR_PREFIX in "$P1" "$P2"; do
-        for CFG in "${CONFIGS[@]}"; do
+        for CFG in "${CFGS[@]}"; do
             for VAR in "${VARIANTS[@]}"; do
                 DIR="${DIR_PREFIX}${CFG}_${VAR}"
                 LOG="${DIR}/train_result.txt"
@@ -190,6 +198,6 @@ for LABEL in "dense:save_pt_dense_:save_pt_notype_dense_" \
             done
         done
     done
-    total=$(( 2*7*4 ))
+    total=$(( 2 * N_CFG * 4 ))
     echo "  PT ${PNAME}: ${pt_done} done / ${pt_partial} partial / ${pt_not} not started (of ${total})"
 done
