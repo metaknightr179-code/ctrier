@@ -63,7 +63,11 @@ for VAR in "${VARIANTS[@]}"; do
             --eval_only --ckpt_dir "${SAS_DIR}" \
             --test_file "${DATA_DIR}/test-v0.txt" \
             --item_num ${ITEM_NUM} \
+            --batch_size 256 \
             --maxlen ${MAXLEN} \
+            --cat "${DATA_DIR}/kuairec_cate.txt" \
+            --n_cat ${N_CAT} \
+            --vec "./KuaiRec_variants/kuairec_vec.npy" \
             --output "${OUTPUT_DIR}/sasrec_results.txt" 2>&1 | tee "eval_sasrec_${VAR}.log"
     elif [ -f "./sasrec_best.pth" ]; then
         echo "[SASRec] Using shared checkpoint..."
@@ -71,7 +75,11 @@ for VAR in "${VARIANTS[@]}"; do
             --eval_only --ckpt_path "sasrec_best.pth" --ckpt_dir "." \
             --test_file "${DATA_DIR}/test-v0.txt" \
             --item_num ${ITEM_NUM} \
+            --batch_size 256 \
             --maxlen ${MAXLEN} \
+            --cat "${DATA_DIR}/kuairec_cate.txt" \
+            --n_cat ${N_CAT} \
+            --vec "./KuaiRec_variants/kuairec_vec.npy" \
             --output "${OUTPUT_DIR}/sasrec_results.txt" 2>&1 | tee "eval_sasrec_${VAR}.log"
     else
         echo "[SASRec] No checkpoint — skip"

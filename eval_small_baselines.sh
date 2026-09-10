@@ -9,12 +9,14 @@
 #   baseline_results_<variant>/gru4rec_results_small.txt
 #   baseline_results_<variant>/sasrec_results_small.txt
 #
-# SASRec's eval script only reports recall/MRR/NDCG; run
-# eval_sasrec_ild_cs_small.py afterwards for its ILD/CS.
+# Both report recall/MRR/NDCG + ILD/CS/CC via the shared evaluator.
 #
-# Usage: bash eval_small_baselines.sh
+# Usage: bash eval_small_baselines.sh [GPU_ID]
 # =============================================================================
 cd "$(dirname "$0")"
+
+GPU=${1:-0}
+export CUDA_VISIBLE_DEVICES=${GPU}
 
 ITEM_NUM=10728
 MAXLEN=50
@@ -56,14 +58,31 @@ for VAR in "${VARIANTS[@]}"; do
         echo "[GRU4Rec] No checkpoint for ${VAR} — skip"
     fi
 
-    # SASRec (shared root checkpoint, same fallback as eval_all.sh)
-    if [ -f "./sasrec_best.pth" ]; then
+    # SASRec (per-variant checkpoint, same fallback as eval_all.sh)
+    SAS_DIR="./save_sasrec_${VAR}"
+    if [ -f "${SAS_DIR}/sasrec_best.pth" ]; then
+        echo "[SASRec] Evaluating..."
+        python3 sasrec_pytorch.py \
+            --eval_only --ckpt_dir "${SAS_DIR}" \
+            --test_file "${DATA_DIR}/test-v0.txt" \
+            --item_num ${ITEM_NUM} \
+            --batch_size 256 \
+            --maxlen ${MAXLEN} \
+            --cat "./KuaiRec_variants/${VAR}/kuairec_cate.txt" \
+            --n_cat ${N_CAT} \
+            --vec "./KuaiRec_variants/kuairec_vec.npy" \
+            --output "${OUT_DIR}/sasrec_results_small.txt" 2>&1 | tee "eval_small_sasrec_${VAR}.log"
+    elif [ -f "./sasrec_best.pth" ]; then
         echo "[SASRec] Evaluating (shared checkpoint sasrec_best.pth)..."
         python3 sasrec_pytorch.py \
             --eval_only --ckpt_path sasrec_best.pth --ckpt_dir "." \
             --test_file "${DATA_DIR}/test-v0.txt" \
             --item_num ${ITEM_NUM} \
+            --batch_size 256 \
             --maxlen ${MAXLEN} \
+            --cat "./KuaiRec_variants/${VAR}/kuairec_cate.txt" \
+            --n_cat ${N_CAT} \
+            --vec "./KuaiRec_variants/kuairec_vec.npy" \
             --output "${OUT_DIR}/sasrec_results_small.txt" 2>&1 | tee "eval_small_sasrec_${VAR}.log"
     else
         echo "[SASRec] No checkpoint — skip"
