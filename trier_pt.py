@@ -85,7 +85,21 @@ class TRIER_PT(nn.Module):
         # Buffer: maps item_id -> padded tensor of type/category IDs [n_items, max_types]
         # Initialized to all zeros (no types); set via set_item_types() after model creation
         self.register_buffer('item_type_ids', torch.zeros(self.n_items, 1, dtype=torch.long))
-        
+
+        # Author embedding layer (creator side info; same RecFormer-style additive fusion)
+        # Each item has exactly one author; representation = ID + type + author embeddings.
+        # OFF by default; enabled by passing -author_file <file> -n_author <N>.
+        # New layer -> author checkpoints are incompatible with non-author runs (and vice versa).
+        self.use_author = bool(getattr(args, 'author_file', None)) and getattr(args, 'n_author', 0) > 0
+        if getattr(args, 'author_file', None) and not self.use_author:
+            print("[TRIER_PT] WARNING: -author_file given but -n_author missing/0 — author embeddings DISABLED")
+        if self.use_author:
+            self.n_authors = args.n_author + 1  # +1 for padding (0 = unknown author)
+            self.author_embedding = nn.Embedding(self.n_authors, self.hidden_size, padding_idx=0)
+            # Buffer: item_id -> author id [n_items]; set via set_item_authors()
+            self.register_buffer('item_author_ids', torch.zeros(self.n_items, dtype=torch.long))
+            print(f"[TRIER_PT] Author embeddings ENABLED (n_authors={args.n_author})")
+
         # Position embedding layer (learnable positional encodings)
         self.position_embedding = nn.Embedding(100, self.hidden_size)
         
@@ -144,15 +158,49 @@ class TRIER_PT(nn.Module):
         return type_emb
 
     # --------------------------
+    # METHOD: set_item_authors
+    # Purpose: Load item-to-author mapping into model buffer
+    # Input: dict {item_id: [author_id]} (single author, ids already 1..N, 0=pad) or None
+    # Called after model creation, before training/eval
+    # --------------------------
+    def set_item_authors(self, author_map):
+        if not self.use_author:
+            return
+        if author_map is None:
+            print("[TRIER_PT] No author mapping provided — author embeddings will be zero")
+            return
+        author_ids = torch.zeros(self.n_items, dtype=torch.long)
+        for item_id, aids in author_map.items():
+            if 0 <= item_id < self.n_items and len(aids) > 0:
+                author_ids[item_id] = aids[0]
+        self.item_author_ids = author_ids.to(self.item_author_ids.device)
+        n_with_authors = (author_ids > 0).sum().item()
+        print(f"[TRIER_PT] Loaded author info: {n_with_authors}/{self.n_items} items have authors")
+
+    # --------------------------
+    # METHOD: get_author_embeddings
+    # Purpose: Look up author embedding for given item IDs
+    # Input: item_ids [batch, seq_len] or [batch]
+    # Output: author_emb [batch, seq_len, hidden] or [batch, hidden]
+    # --------------------------
+    def get_author_embeddings(self, item_ids):
+        author_ids = self.item_author_ids[item_ids]  # [...]
+        return self.author_embedding(author_ids)     # [..., hidden]
+
+    # --------------------------
     # METHOD: combined_item_weight
-    # Purpose: Return item weights with type info added (for scoring)
-    # Output: [n_items, hidden_size] = item_embedding.weight + type_emb
+    # Purpose: Return item weights with side info added (for scoring)
+    # Output: [n_items, hidden_size] = item_embedding.weight + type_emb + author_emb
     # --------------------------
     def combined_item_weight(self):
+        weight = self.item_embedding.weight
         if self.use_type:
-            type_emb = self.get_type_embeddings(torch.arange(self.n_items, device=self.item_type_ids.device))
-            return self.item_embedding.weight + type_emb
-        return self.item_embedding.weight
+            type_emb = self.get_type_embeddings(torch.arange(self.n_items, device=weight.device))
+            weight = weight + type_emb
+        if self.use_author:
+            author_emb = self.get_author_embeddings(torch.arange(self.n_items, device=weight.device))
+            weight = weight + author_emb
+        return weight
 
 
     # --------------------------
@@ -673,12 +721,12 @@ class TRIER_PT(nn.Module):
         # Get item embeddings
         item_emb = self.item_embedding(input_session_ids)
 
-        # Combine item, type, and position embeddings
+        # Combine item, type, author, and position embeddings
+        input_emb = item_emb + position_embedding
         if self.use_type:
-            type_emb = self.get_type_embeddings(input_session_ids)
-            input_emb = item_emb + type_emb + position_embedding
-        else:
-            input_emb = item_emb + position_embedding
+            input_emb = input_emb + self.get_type_embeddings(input_session_ids)
+        if self.use_author:
+            input_emb = input_emb + self.get_author_embeddings(input_session_ids)
         input_emb = self.LayerNorm(input_emb)
         input_emb = self.dropout(input_emb)
         

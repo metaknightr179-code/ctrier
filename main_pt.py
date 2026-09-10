@@ -233,6 +233,16 @@ if __name__ == '__main__':
         print("Warning: cate_file not found")
         cate_map = None
 
+    # Load author mapping (for additive author embeddings; same file format as cate)
+    author_map = None
+    if getattr(args, 'author_file', None):
+        try:
+            author_map = get_cates_map(args.author_file)
+            print(f"Loaded author mapping from {args.author_file}: {len(author_map)} items")
+        except:
+            print(f"Warning: author_file not found: {args.author_file}")
+            author_map = None
+
 
     # --------------------------
     # SUBSECTION 3.3: INITIALIZE RT MODEL (PRE-TRAINED)
@@ -288,6 +298,8 @@ if __name__ == '__main__':
 
         # Load item type/category info into model (RecFormer-style type embeddings)
         model.set_item_types(cate_map)
+        # Load item author info into model (additive author embeddings)
+        model.set_item_authors(author_map)
 
         # Load existing model if resuming training
         last_epoch = 0
@@ -452,6 +464,8 @@ if __name__ == '__main__':
 
         # Load item type/category info into model (RecFormer-style type embeddings)
         model.set_item_types(cate_map)
+        # Load item author info into model (additive author embeddings)
+        model.set_item_authors(author_map)
 
         # Move models to GPU if available
         if torch.cuda.is_available():
@@ -572,6 +586,8 @@ if __name__ == '__main__':
 
         # Load item type/category info into model (RecFormer-style type embeddings)
         model.set_item_types(cate_map)
+        # Load item author info into model (additive author embeddings)
+        model.set_item_authors(author_map)
 
         # Move models to GPU if available
         if torch.cuda.is_available():

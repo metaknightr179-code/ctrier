@@ -73,7 +73,8 @@ VARIANTS = DATASETS["kuairec"]["variants"]
 VARIANT_KEYS = [v[0] for v in VARIANTS]
 
 # model family ordering for display
-FAMILY_ORDER = {"baseline": 0, "duorec": 1, "trier_notype": 2, "trier_type": 3, "gru_trier": 4}
+FAMILY_ORDER = {"baseline": 0, "duorec": 1, "trier_notype": 2, "trier_author": 3,
+                "trier_type": 4, "trier_typeauthor": 5, "gru_trier": 6}
 
 # config suffix -> display label (lambda sweep)
 CONFIG_LABELS = {
@@ -151,6 +152,8 @@ def split_dir_name(dirname, variant_keys=None):
     # Order matters: check longer prefixes first
     for prefix, family in (("pt_notype_dense_", "trier_notype"),
                            ("pt_dense_", "trier_type"),
+                           ("pt_typeauthor_fixrt_", "trier_typeauthor"),
+                           ("pt_author_fixrt_", "trier_author"),
                            ("pt_notype_fixrt_", "trier_notype"),
                            ("pt_fixrt_", "trier_type"),
                            ("pt_notype_", "trier_notype"),
@@ -278,8 +281,10 @@ def model_label(row):
         return "DuoRec"
     if fam == "gru_trier":
         return "GRU-TRIER " + CONFIG_LABELS.get(cfg, cfg)
-    prefix = "TRIER(type) " if fam == "trier_type" else "TRIER(notype) "
-    return prefix + CONFIG_LABELS.get(cfg, cfg)
+    fam_prefix = {"trier_type": "TRIER(type) ", "trier_notype": "TRIER(notype) ",
+                  "trier_author": "TRIER(author) ",
+                  "trier_typeauthor": "TRIER(type+author) "}.get(fam, "TRIER(notype) ")
+    return fam_prefix + CONFIG_LABELS.get(cfg, cfg)
 
 
 def sort_key(row):

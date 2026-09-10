@@ -38,6 +38,8 @@ CONFIGS=( nodiv lamb0002 lamb0005 lamb0005_consec0001 lamb001 lamb005 lamb01 )
 FAMILIES=(
     "type|save_pt_fixrt_|"
     "notype|save_pt_notype_fixrt_|-no_type"
+    "author|save_pt_author_fixrt_|-no_type -author_file ./KuaiRec_variants/kuairec_author.txt -n_author 8369"
+    "typeauthor|save_pt_typeauthor_fixrt_|-author_file ./KuaiRec_variants/kuairec_author.txt -n_author 8369"
 )
 
 get_latest_epoch() {
