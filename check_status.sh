@@ -114,7 +114,7 @@ echo ""
 echo "============================================================"
 echo " PT AUTHOR FAMILIES (target: ${MAX_EPOCHS} epochs or early-stopped)"
 echo "============================================================"
-for FAM in "author|save_pt_author_fixrt_|" "typeauthor|save_pt_typeauthor_fixrt_|"; do
+for FAM in "typeauthor|save_pt_typeauthor_fixrt_|"; do
     IFS='|' read -r FAM_NAME DIR_PREFIX FLAG <<< "$FAM"
     for CFG in "${AUTHOR_CONFIGS[@]}"; do
         for VAR in "${VARIANTS[@]}"; do
@@ -172,18 +172,20 @@ for VAR in "${VARIANTS[@]}"; do
 done
 echo "  RT: ${rt_done} done / ${rt_partial} partial / ${rt_not} not started (of 4)"
 
-# PT all families. Dense sweeps all 9 configs; author only lamb0005.
-# LABEL: name|prefix1|prefix2|num_configs
-for LABEL in "dense|save_pt_dense_|save_pt_notype_dense_|${#CONFIGS[@]}" \
-             "author|save_pt_author_fixrt_|save_pt_typeauthor_fixrt_|${#AUTHOR_CONFIGS[@]}"; do
-    IFS='|' read -r PNAME P1 P2 N_CFG <<< "$LABEL"
+# PT all families. Dense sweeps all 9 configs (type+notype); author is only
+# type+author at lamb0005.
+# LABEL: name|num_prefixes|num_configs (prefix list set inside the loop)
+for LABEL in "dense|2|${#CONFIGS[@]}" "author|1|${#AUTHOR_CONFIGS[@]}"; do
+    IFS='|' read -r PNAME N_PREFIX N_CFG <<< "$LABEL"
     if [ "$PNAME" = "author" ]; then
         CFGS=("${AUTHOR_CONFIGS[@]}")
+        PREFIXES=("save_pt_typeauthor_fixrt_")
     else
         CFGS=("${CONFIGS[@]}")
+        PREFIXES=("save_pt_dense_" "save_pt_notype_dense_")
     fi
     pt_done=0; pt_partial=0; pt_not=0
-    for DIR_PREFIX in "$P1" "$P2"; do
+    for DIR_PREFIX in "${PREFIXES[@]}"; do
         for CFG in "${CFGS[@]}"; do
             for VAR in "${VARIANTS[@]}"; do
                 DIR="${DIR_PREFIX}${CFG}_${VAR}"
@@ -198,6 +200,6 @@ for LABEL in "dense|save_pt_dense_|save_pt_notype_dense_|${#CONFIGS[@]}" \
             done
         done
     done
-    total=$(( 2 * N_CFG * 4 ))
+    total=$(( N_PREFIX * N_CFG * 4 ))
     echo "  PT ${PNAME}: ${pt_done} done / ${pt_partial} partial / ${pt_not} not started (of ${total})"
 done

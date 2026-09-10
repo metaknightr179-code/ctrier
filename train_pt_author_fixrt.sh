@@ -2,18 +2,14 @@
 # =============================================================================
 # PT author-ablation stage, single setting: lambda = 0.005 (no sweep).
 #
-# Two new PT families, both trained WITH additive author embeddings
-# (-author_file ./KuaiRec_variants/kuairec_author.txt -n_author 8369):
-#   author     = type OFF (-no_type) + author ON  -> isolates author effect
-#                                                              (compare vs notype)
-#   typeauthor = type ON + author ON              -> full side info
-#                                                              (compare vs type)
+# One PT family, trained WITH additive author embeddings AND type embeddings:
+# (-author_file ./KuaiRec_variants/kuairec_author.txt -n_author 8369)
+#   typeauthor = type ON + author ON  -> full side info (compare vs type)
 #
 # Ablation ladder:
-#   notype (save_pt_notype_dense_lamb0005_*) < author     (save_pt_author_fixrt_lamb0005_*)
-#   type   (save_pt_dense_lamb0005_*)        < typeauthor (save_pt_typeauthor_fixrt_lamb0005_*)
+#   type (save_pt_dense_lamb0005_*) < typeauthor (save_pt_typeauthor_fixrt_lamb0005_*)
 #
-# 8 runs total: 2 families x 1 config (lamb=0.005) x 4 variants.
+# 4 runs total: 1 family x 1 config (lamb=0.005) x 4 variants.
 #
 # RT checkpoints are SHARED with the existing fixrt pipeline (save_rt_fix_<variant>);
 # the RT model has no side-info layers. Author PTs must be trained from scratch
@@ -42,8 +38,8 @@ CONFIGS=(
 )
 
 # FAMILY|DIR_PREFIX|TYPE_FLAG (author flags appended to every run)
+# Only type+author (type stays ON).
 FAMILIES=(
-    "author|save_pt_author_fixrt_|-no_type"
     "typeauthor|save_pt_typeauthor_fixrt_|"
 )
 

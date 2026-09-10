@@ -3,8 +3,7 @@
 # Evaluation for DENSE multi-position-supervision KuaiRec checkpoints.
 #   save_pt_dense_<config>_<variant>         (dense, type embeddings ON)
 #   save_pt_notype_dense_<config>_<variant>  (dense, -no_type)
-#   save_pt_author_fixrt_lamb0005_<variant>     (dense, -no_type + author, ONLY lamb=0.005)
-#   save_pt_typeauthor_fixrt_lamb0005_<variant> (dense, type + author,  ONLY lamb=0.005)
+#   save_pt_typeauthor_fixrt_lamb0005_<variant> (dense, type + author, ONLY lamb=0.005)
 #
 # NOTE: -dense is NOT passed at eval: test_forward always gathers the last
 # position; dense only changes the training loss/forward. Checkpoint weights
@@ -51,9 +50,8 @@ FAMILIES=(
     "notype|save_pt_notype_dense_|-no_type"
 )
 
-# Author-ablation families run ONLY lamb0005 and need the author args at load.
+# Author ablation: only type+author family, ONLY lamb0005; needs author args at load.
 AUTHOR_FAMILIES=(
-    "author|save_pt_author_fixrt_|-no_type"
     "typeauthor|save_pt_typeauthor_fixrt_|"
 )
 AUTHOR_EXTRA="-author_file ./KuaiRec_variants/kuairec_author.txt -n_author 8369"
