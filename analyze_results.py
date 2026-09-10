@@ -82,12 +82,15 @@ CONFIG_LABELS = {
     "nodiv": "No-Div",
     "lamb0002": "$\\lambda$=0.002",
     "lamb0005": "$\\lambda$=0.005",
-    "lamb0005_consec0001": "$\\lambda$=0.005+Cons",
+    "lamb0005_consec0001": "$\\lambda$=0.005+C0.001",
+    "lamb0005_consec005": "$\\lambda$=0.005+C0.05",
+    "lamb0005_consec01": "$\\lambda$=0.005+C0.1",
     "lamb001": "$\\lambda$=0.01",
     "lamb005": "$\\lambda$=0.05",
     "lamb01": "$\\lambda$=0.1",
 }
 CONFIG_ORDER = ["nodiv", "lamb0002", "lamb0005", "lamb0005_consec0001",
+                "lamb0005_consec005", "lamb0005_consec01",
                 "lamb001", "lamb005", "lamb01"]
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

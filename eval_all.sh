@@ -1,11 +1,7 @@
 #!/bin/bash
 # =============================================================================
-# Unified evaluation script: evaluates ALL PT variants and baselines.
-#   - nodiv, lamb0005, lamb001, lamb005, lamb01, consec0001
-#   - GRU4Rec, SASRec, BERT4Rec (eval-only)
-# for all 4 Kuairec variants.
-#
-# Uses fixed NDCG formula (1/log2(idx+2)).
+# Big-matrix evaluation of baselines (GRU4Rec, SASRec, BERT4Rec) on KuaiRec.
+# For TRIER dense PT evaluation, use eval_dense_kuairec.sh instead.
 #
 # Usage:
 #   bash eval_all.sh
@@ -19,16 +15,6 @@ VARIANTS=(
     "kuairec_first_average"
 )
 
-# PT configs: SUFFIX|LAMB|LMD_CONSEC
-PT_CONFIGS=(
-    "nodiv|0|0"
-    "lamb0005|0.005|0"
-    "lamb001|0.01|0"
-    "lamb005|0.05|0"
-    "lamb01|0.1|0"
-    "consec0001|0.01|0.001"
-)
-
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}"
 
@@ -37,82 +23,8 @@ ITEM_NUM=10728
 N_CAT=31
 MAXLEN=50
 
-get_latest_epoch() {
-    ls "${1}/"duorec-*.pth 2>/dev/null | sed 's/.*duorec-//;s/\.pth//' | sort -n | tail -1
-}
-
 echo "############################################################"
-echo "# Unified Evaluation: All PT Variants + Baselines"
-echo "############################################################"
-echo ""
-
-# ===================== PT MODELS =====================
-for CONFIG in "${PT_CONFIGS[@]}"; do
-    IFS='|' read -r SUFFIX LAMB LMD_CONSEC <<< "$CONFIG"
-
-    echo "############################################################"
-    echo "# PT Config: ${SUFFIX} (lamb=${LAMB}, lmd_consec=${LMD_CONSEC})"
-    echo "############################################################"
-
-    for VAR in "${VARIANTS[@]}"; do
-        RT_DIR="./save_rt_${VAR}"
-        PT_DIR="./save_pt_${SUFFIX}_${VAR}"
-
-        echo ""
-        echo "=============================================="
-        echo "PT ${SUFFIX} — ${VAR}"
-        echo "=============================================="
-
-        LATEST_PT=$(get_latest_epoch "${PT_DIR}/model")
-        if [ -z "$LATEST_PT" ]; then
-            echo "[PT ${SUFFIX}] No checkpoints — skipping"
-            continue
-        fi
-
-        LATEST_RT=$(get_latest_epoch "${RT_DIR}/model")
-        if [ -z "$LATEST_RT" ]; then
-            echo "[RT] No checkpoints — cannot eval, skipping"
-            continue
-        fi
-
-        echo "[PT ${SUFFIX}] Evaluating epoch ${LATEST_PT}..."
-
-        # Validation
-        rm -f "${PT_DIR}/valid_result.txt"
-        CUDA_VISIBLE_DEVICES=${GPU} python3 main_pt.py \
-            -tf ./KuaiRec_variants/${VAR}/train-v0.txt \
-            -vf ./KuaiRec_variants/${VAR}/valid-v0.txt \
-            -ef ./KuaiRec_variants/${VAR}/test-v0.txt \
-            -vn ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
-            -en ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
-            -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
-            -n 10728 -m valid -e ${LATEST_PT} -b 64 \
-            -div -lamb ${LAMB} -lmd_consec ${LMD_CONSEC} -t_mode topk \
-            -start_epoch ${LATEST_PT} -epoch_step 1 \
-            -i ${RT_DIR} -o ${PT_DIR} 2>&1 | tee "eval_pt_${SUFFIX}_valid_${VAR}.log"
-
-        # Test
-        rm -f "${PT_DIR}/test_result.txt"
-        CUDA_VISIBLE_DEVICES=${GPU} python3 main_pt.py \
-            -tf ./KuaiRec_variants/${VAR}/train-v0.txt \
-            -vf ./KuaiRec_variants/${VAR}/valid-v0.txt \
-            -ef ./KuaiRec_variants/${VAR}/test-v0.txt \
-            -vn ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
-            -en ./KuaiRec_variants/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt \
-            -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
-            -n 10728 -m test -e ${LATEST_PT} -b 64 \
-            -div -lamb ${LAMB} -lmd_consec ${LMD_CONSEC} -t_mode topk \
-            -start_epoch ${LATEST_PT} -epoch_step 1 \
-            -i ${RT_DIR} -o ${PT_DIR} 2>&1 | tee "eval_pt_${SUFFIX}_test_${VAR}.log"
-
-        echo "=== ${SUFFIX}/${VAR} eval complete ==="
-    done
-    echo ""
-done
-
-# ===================== BASELINES =====================
-echo "############################################################"
-echo "# Baselines (eval-only with fixed NDCG)"
+echo "# Baselines (big matrix, eval-only)"
 echo "############################################################"
 echo ""
 
@@ -192,16 +104,10 @@ for VAR in "${VARIANTS[@]}"; do
 done
 
 echo "############################################################"
-echo "ALL EVALUATIONS COMPLETE!"
+echo "BASELINE EVALUATION COMPLETE!"
 echo "############################################################"
 echo ""
 echo "Results:"
-for CONFIG in "${PT_CONFIGS[@]}"; do
-    IFS='|' read -r SUFFIX _ _ <<< "$CONFIG"
-    for VAR in "${VARIANTS[@]}"; do
-        echo "  PT ${SUFFIX} ${VAR}: ./save_pt_${SUFFIX}_${VAR}/test_result.txt"
-    done
-done
 for VAR in "${VARIANTS[@]}"; do
     echo "  Baselines ${VAR}: ./baseline_results_${VAR}/"
 done

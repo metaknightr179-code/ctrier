@@ -78,37 +78,6 @@ for VAR in "${VARIANTS[@]}"; do
     fi
 done
 
-# ---- PT (non-dense fixrt) ----
-echo ""
-echo "============================================================"
-echo " PT NON-DENSE FIXRT (target: ${MAX_EPOCHS} epochs or early-stopped)"
-echo "============================================================"
-for FAM in "type|save_pt_fixrt_|" "notype|save_pt_notype_fixrt_|-no_type"; do
-    IFS='|' read -r FAM_NAME DIR_PREFIX FLAG <<< "$FAM"
-    for CFG in "${CONFIGS[@]}"; do
-        for VAR in "${VARIANTS[@]}"; do
-            DIR="${DIR_PREFIX}${CFG}_${VAR}"
-            LOG="${DIR}/train_result.txt"
-            DONE="${DIR}/DONE"
-
-            if [ -f "$DONE" ]; then
-                echo "  ${FAM_NAME} ${CFG} ${VAR}: DONE"
-            elif [ -f "$LOG" ]; then
-                LINES=$(wc -l < "$LOG" 2>/dev/null); LINES=${LINES:-0}
-                if [ "$LINES" -ge "$MAX_EPOCHS" ]; then
-                    echo "  ${FAM_NAME} ${CFG} ${VAR}: ${MAX_EPOCHS} epochs (complete)"
-                else
-                    echo "  ${FAM_NAME} ${CFG} ${VAR}: partial (${LINES}/${MAX_EPOCHS})"
-                fi
-            elif [ -d "${DIR}/model" ]; then
-                echo "  ${FAM_NAME} ${CFG} ${VAR}: started (no log)"
-            else
-                : #  don't print not-started to reduce noise
-            fi
-        done
-    done
-done
-
 # ---- PT (dense) ----
 echo ""
 echo "============================================================"
@@ -202,8 +171,7 @@ done
 echo "  RT: ${rt_done} done / ${rt_partial} partial / ${rt_not} not started (of 4)"
 
 # PT all families
-for LABEL in "fixrt:save_pt_fixrt_:save_pt_notype_fixrt_" \
-             "dense:save_pt_dense_:save_pt_notype_dense_" \
+for LABEL in "dense:save_pt_dense_:save_pt_notype_dense_" \
              "author:save_pt_author_fixrt_:save_pt_typeauthor_fixrt_"; do
     IFS=':' read -r PNAME P1 P2 <<< "$LABEL"
     pt_done=0; pt_partial=0; pt_not=0

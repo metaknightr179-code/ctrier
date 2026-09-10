@@ -40,6 +40,8 @@ CONFIGS=(
     "lamb0002|0.002|0"
     "lamb0005|0.005|0"
     "lamb0005_consec0001|0.005|0.001"
+    "lamb0005_consec005|0.005|0.05"
+    "lamb0005_consec01|0.005|0.1"
     "lamb001|0.01|0"
     "lamb005|0.05|0"
     "lamb01|0.1|0"
@@ -142,6 +144,7 @@ for fam_line in "${FAMILIES[@]}"; do
                 -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
                 ${AUTHOR_FLAGS} ${type_flag} \
                 -m train -e ${MAX_EPOCHS} -b 256 -l 1e-3 \
+                -dense \
                 ${DIV_FLAGS} \
                 -t_mode topk \
                 -early_stop -patience 100 -min_delta 0.0001 \

@@ -43,6 +43,7 @@ run_pt() {
         -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
         -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
         -m train -e ${MAX_EPOCHS} -b ${BS} -l ${LR} \
+        -dense \
         -div -lamb 0.005 -lmd_consec 0 -t_mode topk \
         -i ${RT_DIR} -o ${PT_DIR} ${EXTRA} 2>&1 | tee "train_pt_abl${TAG}_${VAR}.log"
 }
