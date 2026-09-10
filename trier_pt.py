@@ -100,6 +100,32 @@ class TRIER_PT(nn.Module):
             self.register_buffer('item_author_ids', torch.zeros(self.n_items, dtype=torch.long))
             print(f"[TRIER_PT] Author embeddings ENABLED (n_authors={args.n_author})")
 
+        # Music embedding layer (background-music side info; same additive fusion)
+        # Each item has exactly one music id (0 = no music/unknown padding).
+        # OFF by default; enabled by passing -music_file <file> -n_music <N>.
+        self.use_music = bool(getattr(args, 'music_file', None)) and getattr(args, 'n_music', 0) > 0
+        if getattr(args, 'music_file', None) and not self.use_music:
+            print("[TRIER_PT] WARNING: -music_file given but -n_music missing/0 — music embeddings DISABLED")
+        if self.use_music:
+            self.n_musics = args.n_music + 1  # +1 for padding (0 = no music)
+            self.music_embedding = nn.Embedding(self.n_musics, self.hidden_size, padding_idx=0)
+            # Buffer: item_id -> music id [n_items]; set via set_item_musics()
+            self.register_buffer('item_music_ids', torch.zeros(self.n_items, dtype=torch.long))
+            print(f"[TRIER_PT] Music embeddings ENABLED (n_musics={args.n_music})")
+
+        # Duration embedding layer (video length bucket side info; additive fusion)
+        # Each item maps to one length bucket 1..n_dur (0 = unknown padding).
+        # OFF by default; enabled by passing -dur_file <file> -n_dur <N>.
+        self.use_dur = bool(getattr(args, 'dur_file', None)) and getattr(args, 'n_dur', 0) > 0
+        if getattr(args, 'dur_file', None) and not self.use_dur:
+            print("[TRIER_PT] WARNING: -dur_file given but -n_dur missing/0 — duration embeddings DISABLED")
+        if self.use_dur:
+            self.n_durs = args.n_dur + 1  # +1 for padding (0 = unknown duration)
+            self.dur_embedding = nn.Embedding(self.n_durs, self.hidden_size, padding_idx=0)
+            # Buffer: item_id -> duration bucket [n_items]; set via set_item_durs()
+            self.register_buffer('item_dur_ids', torch.zeros(self.n_items, dtype=torch.long))
+            print(f"[TRIER_PT] Duration embeddings ENABLED (n_durs={args.n_dur})")
+
         # Position embedding layer (learnable positional encodings)
         self.position_embedding = nn.Embedding(100, self.hidden_size)
         
@@ -188,9 +214,55 @@ class TRIER_PT(nn.Module):
         return self.author_embedding(author_ids)     # [..., hidden]
 
     # --------------------------
+    # METHOD: set_item_musics
+    # Purpose: Load item-to-music mapping into model buffer
+    # Input: dict {item_id: [music_id]} (single music id, 1..N, 0=pad) or None
+    # --------------------------
+    def set_item_musics(self, music_map):
+        if not self.use_music:
+            return
+        if music_map is None:
+            print("[TRIER_PT] No music mapping provided — music embeddings will be zero")
+            return
+        music_ids = torch.zeros(self.n_items, dtype=torch.long)
+        for item_id, mids in music_map.items():
+            if 0 <= item_id < self.n_items and len(mids) > 0:
+                music_ids[item_id] = mids[0]
+        self.item_music_ids = music_ids.to(self.item_music_ids.device)
+        n_with_music = (music_ids > 0).sum().item()
+        print(f"[TRIER_PT] Loaded music info: {n_with_music}/{self.n_items} items have music")
+
+    def get_music_embeddings(self, item_ids):
+        music_ids = self.item_music_ids[item_ids]  # [...]
+        return self.music_embedding(music_ids)     # [..., hidden]
+
+    # --------------------------
+    # METHOD: set_item_durs
+    # Purpose: Load item-to-duration-bucket mapping into model buffer
+    # Input: dict {item_id: [dur_bucket]} (single bucket, 1..N, 0=pad) or None
+    # --------------------------
+    def set_item_durs(self, dur_map):
+        if not self.use_dur:
+            return
+        if dur_map is None:
+            print("[TRIER_PT] No duration mapping provided — duration embeddings will be zero")
+            return
+        dur_ids = torch.zeros(self.n_items, dtype=torch.long)
+        for item_id, dids in dur_map.items():
+            if 0 <= item_id < self.n_items and len(dids) > 0:
+                dur_ids[item_id] = dids[0]
+        self.item_dur_ids = dur_ids.to(self.item_dur_ids.device)
+        n_with_dur = (dur_ids > 0).sum().item()
+        print(f"[TRIER_PT] Loaded duration info: {n_with_dur}/{self.n_items} items have duration")
+
+    def get_dur_embeddings(self, item_ids):
+        dur_ids = self.item_dur_ids[item_ids]  # [...]
+        return self.dur_embedding(dur_ids)     # [..., hidden]
+
+    # --------------------------
     # METHOD: combined_item_weight
     # Purpose: Return item weights with side info added (for scoring)
-    # Output: [n_items, hidden_size] = item_embedding.weight + type_emb + author_emb
+    # Output: [n_items, hidden_size] = item_emb + type_emb + author/music/dur_emb
     # --------------------------
     def combined_item_weight(self):
         weight = self.item_embedding.weight
@@ -200,6 +272,12 @@ class TRIER_PT(nn.Module):
         if self.use_author:
             author_emb = self.get_author_embeddings(torch.arange(self.n_items, device=weight.device))
             weight = weight + author_emb
+        if self.use_music:
+            music_emb = self.get_music_embeddings(torch.arange(self.n_items, device=weight.device))
+            weight = weight + music_emb
+        if self.use_dur:
+            dur_emb = self.get_dur_embeddings(torch.arange(self.n_items, device=weight.device))
+            weight = weight + dur_emb
         return weight
 
 
@@ -721,12 +799,16 @@ class TRIER_PT(nn.Module):
         # Get item embeddings
         item_emb = self.item_embedding(input_session_ids)
 
-        # Combine item, type, author, and position embeddings
+        # Combine item, type, author/music/dur, and position embeddings
         input_emb = item_emb + position_embedding
         if self.use_type:
             input_emb = input_emb + self.get_type_embeddings(input_session_ids)
         if self.use_author:
             input_emb = input_emb + self.get_author_embeddings(input_session_ids)
+        if self.use_music:
+            input_emb = input_emb + self.get_music_embeddings(input_session_ids)
+        if self.use_dur:
+            input_emb = input_emb + self.get_dur_embeddings(input_session_ids)
         input_emb = self.LayerNorm(input_emb)
         input_emb = self.dropout(input_emb)
         

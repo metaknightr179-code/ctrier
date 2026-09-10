@@ -73,6 +73,10 @@ def get_args():
     parser.add_argument('-no_type', action='store_true', help='disable RecFormer-style type embeddings in PT (makes PT use item ID embeddings only)')
     parser.add_argument('-author_file', type=str, default=None, help='item->author mapping path (format: "item_id author_id" per line, author ids 1..N; 0=unknown). Enables additive author embeddings in PT.')
     parser.add_argument('-n_author', type=int, default=0, help='number of unique authors (embedding table size = n_author+1); required with -author_file')
+    parser.add_argument('-music_file', type=str, default=None, help='item->music mapping path (format: "item_id music_id" per line, music ids 1..N; 0=no music). Enables additive music embeddings in PT.')
+    parser.add_argument('-n_music', type=int, default=0, help='number of unique music ids (embedding table size = n_music+1); required with -music_file')
+    parser.add_argument('-dur_file', type=str, default=None, help='item->duration-bucket mapping path (format: "item_id bucket" per line, buckets 1..N; 0=unknown). Enables additive duration embeddings in PT.')
+    parser.add_argument('-n_dur', type=int, default=0, help='number of duration buckets (embedding table size = n_dur+1); required with -dur_file')
     parser.add_argument('-no_mask', action='store_true', help='disable causal mask in PT encoder (ablation: bidirectional encoder)')
     parser.add_argument('-dense', action='store_true', help='enable dense multi-position supervision (CE loss at every position, not just last)')
 

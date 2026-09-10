@@ -109,12 +109,14 @@ for FAM in "type|save_pt_dense_|" "notype|save_pt_notype_dense_|-no_type"; do
     done
 done
 
-# ---- PT (author families) ----
+# ---- PT (side-info families: type + one extra channel, lamb0005 only) ----
 echo ""
 echo "============================================================"
-echo " PT AUTHOR FAMILIES (target: ${MAX_EPOCHS} epochs or early-stopped)"
+echo " PT SIDE-INFO FAMILIES (author/music/dur, target: ${MAX_EPOCHS} epochs or early-stopped)"
 echo "============================================================"
-for FAM in "typeauthor|save_pt_typeauthor_fixrt_|"; do
+for FAM in "typeauthor|save_pt_typeauthor_fixrt_" \
+           "typemusic|save_pt_typemusic_fixrt_" \
+           "typedur|save_pt_typedur_fixrt_"; do
     IFS='|' read -r FAM_NAME DIR_PREFIX FLAG <<< "$FAM"
     for CFG in "${AUTHOR_CONFIGS[@]}"; do
         for VAR in "${VARIANTS[@]}"; do
@@ -172,18 +174,18 @@ for VAR in "${VARIANTS[@]}"; do
 done
 echo "  RT: ${rt_done} done / ${rt_partial} partial / ${rt_not} not started (of 4)"
 
-# PT all families. Dense sweeps all 9 configs (type+notype); author is only
-# type+author at lamb0005.
-# LABEL: name|num_prefixes|num_configs (prefix list set inside the loop)
-for LABEL in "dense|2|${#CONFIGS[@]}" "author|1|${#AUTHOR_CONFIGS[@]}"; do
+# PT all families. Dense sweeps all 9 configs (type+notype); the three side
+# families (type+author, type+music, type+dur) run only lamb0005.
+# GROUP: name|num_prefixes (prefix list set inside the loop)
+for LABEL in "dense|2|${#CONFIGS[@]}" "author|1|${#AUTHOR_CONFIGS[@]}" \
+             "music|1|${#AUTHOR_CONFIGS[@]}" "dur|1|${#AUTHOR_CONFIGS[@]}"; do
     IFS='|' read -r PNAME N_PREFIX N_CFG <<< "$LABEL"
-    if [ "$PNAME" = "author" ]; then
-        CFGS=("${AUTHOR_CONFIGS[@]}")
-        PREFIXES=("save_pt_typeauthor_fixrt_")
-    else
-        CFGS=("${CONFIGS[@]}")
-        PREFIXES=("save_pt_dense_" "save_pt_notype_dense_")
-    fi
+    case "$PNAME" in
+        dense) CFGS=("${CONFIGS[@]}");            PREFIXES=("save_pt_dense_" "save_pt_notype_dense_") ;;
+        author) CFGS=("${AUTHOR_CONFIGS[@]}");    PREFIXES=("save_pt_typeauthor_fixrt_") ;;
+        music) CFGS=("${AUTHOR_CONFIGS[@]}");     PREFIXES=("save_pt_typemusic_fixrt_") ;;
+        dur) CFGS=("${AUTHOR_CONFIGS[@]}");       PREFIXES=("save_pt_typedur_fixrt_") ;;
+    esac
     pt_done=0; pt_partial=0; pt_not=0
     for DIR_PREFIX in "${PREFIXES[@]}"; do
         for CFG in "${CFGS[@]}"; do

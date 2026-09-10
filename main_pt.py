@@ -243,6 +243,26 @@ if __name__ == '__main__':
             print(f"Warning: author_file not found: {args.author_file}")
             author_map = None
 
+    # Load music mapping (for additive music embeddings; same file format)
+    music_map = None
+    if getattr(args, 'music_file', None):
+        try:
+            music_map = get_cates_map(args.music_file)
+            print(f"Loaded music mapping from {args.music_file}: {len(music_map)} items")
+        except:
+            print(f"Warning: music_file not found: {args.music_file}")
+            music_map = None
+
+    # Load duration-bucket mapping (for additive duration embeddings; same file format)
+    dur_map = None
+    if getattr(args, 'dur_file', None):
+        try:
+            dur_map = get_cates_map(args.dur_file)
+            print(f"Loaded duration mapping from {args.dur_file}: {len(dur_map)} items")
+        except:
+            print(f"Warning: dur_file not found: {args.dur_file}")
+            dur_map = None
+
 
     # --------------------------
     # SUBSECTION 3.3: INITIALIZE RT MODEL (PRE-TRAINED)
@@ -300,6 +320,9 @@ if __name__ == '__main__':
         model.set_item_types(cate_map)
         # Load item author info into model (additive author embeddings)
         model.set_item_authors(author_map)
+        # Load item music / duration side info (additive embeddings)
+        model.set_item_musics(music_map)
+        model.set_item_durs(dur_map)
 
         # Load existing model if resuming training
         last_epoch = 0
@@ -466,6 +489,9 @@ if __name__ == '__main__':
         model.set_item_types(cate_map)
         # Load item author info into model (additive author embeddings)
         model.set_item_authors(author_map)
+        # Load item music / duration side info (additive embeddings)
+        model.set_item_musics(music_map)
+        model.set_item_durs(dur_map)
 
         # Move models to GPU if available
         if torch.cuda.is_available():
@@ -588,6 +614,9 @@ if __name__ == '__main__':
         model.set_item_types(cate_map)
         # Load item author info into model (additive author embeddings)
         model.set_item_authors(author_map)
+        # Load item music / duration side info (additive embeddings)
+        model.set_item_musics(music_map)
+        model.set_item_durs(dur_map)
 
         # Move models to GPU if available
         if torch.cuda.is_available():

@@ -75,7 +75,8 @@ VARIANT_KEYS = [v[0] for v in VARIANTS]
 
 # model family ordering for display
 FAMILY_ORDER = {"baseline": 0, "duorec": 1, "trier_notype": 2, "trier_author": 3,
-                "trier_type": 4, "trier_typeauthor": 5, "gru_trier": 6}
+                "trier_type": 4, "trier_typeauthor": 5, "trier_typemusic": 6,
+                "trier_typedur": 7, "gru_trier": 8}
 
 # config suffix -> display label (lambda sweep)
 CONFIG_LABELS = {
@@ -157,6 +158,8 @@ def split_dir_name(dirname, variant_keys=None):
     for prefix, family in (("pt_notype_dense_", "trier_notype"),
                            ("pt_dense_", "trier_type"),
                            ("pt_typeauthor_fixrt_", "trier_typeauthor"),
+                           ("pt_typemusic_fixrt_", "trier_typemusic"),
+                           ("pt_typedur_fixrt_", "trier_typedur"),
                            ("pt_author_fixrt_", "trier_author"),
                            ("pt_notype_fixrt_", "trier_notype"),
                            ("pt_fixrt_", "trier_type"),
@@ -171,11 +174,29 @@ def split_dir_name(dirname, variant_keys=None):
     return None
 
 
+# PT directory prefixes whose models were trained with -dense.
+# NOTE: the side-info families (author/music/dur) keep the "_fixrt_" name from
+# the shared-RT pipeline but are ALL trained dense — they must be included by
+# --dense_only even though their dirname does not contain the substring "dense".
+DENSE_DIR_PREFIXES = (
+    "save_pt_dense_",
+    "save_pt_notype_dense_",
+    "save_pt_typeauthor_fixrt_",
+    "save_pt_typemusic_fixrt_",
+    "save_pt_typedur_fixrt_",
+    "save_pt_author_fixrt_",
+)
+
+
+def is_dense_dir(dirname):
+    return dirname.startswith(DENSE_DIR_PREFIXES)
+
+
 def collect_all_results(proto_filter=None, variant_keys=None, dense_only=False):
     """Return list of dicts: {family, config, variant, proto, label, data}.
 
-    If dense_only=True, only include dirs whose name contains 'dense'
-    (i.e. save_pt_dense_* / save_pt_notype_dense_*).
+    If dense_only=True, only include dirs trained with -dense
+    (see DENSE_DIR_PREFIXES).
     """
     if variant_keys is None:
         variant_keys = VARIANT_KEYS
@@ -189,7 +210,7 @@ def collect_all_results(proto_filter=None, variant_keys=None, dense_only=False):
     #   test_result_topk_small.txt  small matrix; topk full-catalog ranking
     for path in sorted(glob.glob(os.path.join(SCRIPT_DIR, "save_*", "test_result*.txt"))):
         dirname = os.path.basename(os.path.dirname(path))
-        if dense_only and "dense" not in dirname:
+        if dense_only and not is_dense_dir(dirname):
             continue
         basename = os.path.basename(path)
         if basename == "test_result.txt":
@@ -293,7 +314,9 @@ def model_label(row):
         return "GRU-TRIER " + CONFIG_LABELS.get(cfg, cfg)
     fam_prefix = {"trier_type": "TRIER(type) ", "trier_notype": "TRIER(notype) ",
                   "trier_author": "TRIER(author) ",
-                  "trier_typeauthor": "TRIER(type+author) "}.get(fam, "TRIER(notype) ")
+                  "trier_typeauthor": "TRIER(type+author) ",
+                  "trier_typemusic": "TRIER(type+music) ",
+                  "trier_typedur": "TRIER(type+dur) "}.get(fam, "TRIER(notype) ")
     return fam_prefix + CONFIG_LABELS.get(cfg, cfg)
 
 
@@ -374,14 +397,24 @@ def tex_model_label(fam, cfg, infer):
     elif fam == "gru_trier":
         base = "GRU-TRIER"
     else:
-        base = "TRIER" if fam == "trier_type" else r"TRIER$_{-t}$"
+        # Type-based families (type on, possibly + one side channel) keep plain TRIER;
+        # type-off families (notype, author-only) get the -t subscript.
+        type_on = fam in ("trier_type", "trier_typeauthor", "trier_typemusic", "trier_typedur")
+        base = "TRIER" if type_on else r"TRIER$_{-t}$"
+        # Side-channel superscript tag
+        side_tag = {"trier_typeauthor": r"$^{+a}$",
+                    "trier_typemusic": r"$^{+m}$",
+                    "trier_typedur": r"$^{+d}$"}.get(fam, "")
+        base += side_tag
     # Append short config tag only for TRIER variants (baselines/DuoRec are single config)
-    if fam in ("trier_type", "trier_notype", "gru_trier"):
+    trier_fams = ("trier_type", "trier_notype", "trier_author", "trier_typeauthor",
+                  "trier_typemusic", "trier_typedur", "gru_trier")
+    if fam in trier_fams:
         short = CONFIG_LABELS.get(cfg, cfg)
         # drop the lambda part for column headers to keep them short
         base += " " + short
     # Append infer tag only when both exist (some models have only one mode)
-    if fam in ("trier_type", "trier_notype", "gru_trier") and infer and infer != "topk":
+    if fam in trier_fams and infer and infer != "topk":
         base += " (" + infer + ")"
     return base
 
