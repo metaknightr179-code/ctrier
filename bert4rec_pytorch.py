@@ -49,28 +49,41 @@ class BERT4RecModel(nn.Module):
         self.ln = nn.LayerNorm(hidden_units)
         self.out_proj = nn.Linear(hidden_units, item_num + 1)  # + pad
 
-    def forward(self, input_seq, pos_indices=None):
-        """Forward pass.
-        input_seq: (B, L) with token IDs (0=pad, 1..item_num=items, item_num+1=mask)
-        Returns logits: (B, L, item_num+1)
-        """
+    def _encode(self, input_seq):
+        """Run embeddings + transformer encoder. Returns (B, L, H)."""
         B, L = input_seq.shape
-
-        if pos_indices is None:
-            pos_indices = torch.arange(L, device=input_seq.device).unsqueeze(0).expand(B, -1)
-
+        pos_indices = torch.arange(L, device=input_seq.device).unsqueeze(0).expand(B, -1)
         seq_emb = self.item_embedding(input_seq) + self.position_embedding(pos_indices)
         seq_emb = self.ln(seq_emb)
         seq_emb = self.dropout(seq_emb)
+        # Padding mask: True = positions to ignore (pad token 0)
+        padding_mask = (input_seq == 0)  # (B, L)
+        encoded = self.encoder(seq_emb, src_key_padding_mask=padding_mask)
+        return encoded
 
-        encoded = self.encoder(seq_emb)  # (B, L, H)
+    def forward(self, input_seq, pos_indices=None):
+        """Forward pass (eval): full logits at every position.
+        Returns logits: (B, L, item_num+1)
+        """
+        encoded = self._encode(input_seq)  # (B, L, H)
+        logits = self.out_proj(encoded)    # (B, L, item_num+1)
+        return logits
 
-        logits = self.out_proj(encoded)  # (B, L, item_num+1)
+    def forward_mlm(self, masked_seq, mask_mask):
+        """Forward pass (training): compute logits ONLY at masked positions.
+        Avoids materializing the huge (B, L, V) output tensor.
+          masked_seq: (B, L) input with mask_token substituted
+          mask_mask:  (B, L) bool — True where masked
+        Returns logits: (M, item_num+1) over the M masked positions only.
+        """
+        encoded = self._encode(masked_seq)   # (B, L, H)
+        hidden = encoded[mask_mask]          # (M, H) gather masked positions
+        logits = self.out_proj(hidden)       # (M, item_num+1)
         return logits
 
     def mask_sequence(self, input_seq):
-        """Vectorized MLM masking for the whole batch at once.
-        Returns: (masked_seq, mask_mask, targets) all on the same device as input_seq.
+        """Fully vectorized MLM masking (one GPU sync for the whole batch).
+        Returns: (masked_seq, mask_mask, targets).
           masked_seq: (B, L) with mask_token substituted
           mask_mask:  (B, L) bool — True where masked
           targets:    (B, L) original item IDs (0 where not masked)
@@ -78,26 +91,27 @@ class BERT4RecModel(nn.Module):
         B, L = input_seq.shape
         device = input_seq.device
 
-        # Valid (non-pad) positions
-        valid = input_seq > 0  # (B, L)
-        n_valid = valid.sum(dim=1)  # (B,)
-        n_masks = torch.clamp((n_valid.float() * self.mask_prob).round().long(), min=1)
+        valid = input_seq > 0                                  # (B, L)
+        n_valid = valid.sum(dim=1)                             # (B,)
+        n_masks = torch.clamp((n_valid.float() * self.mask_prob).round().long(),
+                              min=1)                           # (B,)
+        max_masks = int(n_masks.max().item())                  # single sync
 
-        # Random scores per position, set invalid positions to -1 so they're never selected
-        rand = torch.rand(B, L, device=device) * valid.float()
-        # Keep only top-n_masks per row
-        # Use a large negative for invalid positions
-        rand = rand + (1 - valid.float()) * -1e9
+        # Random score per position; padding ranks last
+        rand = torch.rand(B, L, device=device).masked_fill(~valid, -1e9)
+        _, top_idx = rand.topk(max_masks, dim=1)              # (B, max_masks)
 
-        mask_mask = torch.zeros(B, L, dtype=torch.bool, device=device)
-        for b in range(B):
-            nm = int(n_masks[b].item())
-            if nm > 0:
-                topk_idx = rand[b].topk(nm).indices
-                mask_mask[b, topk_idx] = True
+        # Keep only the first n_masks[b] entries per row
+        keep = torch.arange(max_masks, device=device).unsqueeze(0) < n_masks.unsqueeze(1)
+        rows = torch.arange(B, device=device).unsqueeze(1).expand(-1, max_masks)
+        flat_idx = rows[keep] * L + top_idx[keep]            # (M,) flat indices
+
+        mask_mask = torch.zeros(B * L, dtype=torch.bool, device=device)
+        mask_mask[flat_idx] = True
+        mask_mask = mask_mask.view(B, L)
 
         targets = input_seq.clone()
-        targets[~mask_mask] = 0  # only masked positions have targets
+        targets[~mask_mask] = 0
 
         masked_seq = input_seq.clone()
         masked_seq[mask_mask] = self.mask_token
@@ -191,27 +205,24 @@ def train_bert4rec(train_file, test_file, item_num, epochs=500, batch_size=64,
         num_masked = 0
         np.random.shuffle(train_batches)
 
+        t0 = time.time()
         for batch in train_batches:
             batch = batch.to(device)
 
-            # Vectorized masking (no per-sample Python loop)
+            # Vectorized masking (single GPU sync for the whole batch)
             masked_batch, mask_mask, targets = model.mask_sequence(batch)
 
-            logits = model(masked_batch)  # (B, L, item_num+1)
-
-            # Vectorized loss: flatten masked positions, CE with ignore_index=0
-            # targets has 0 at non-masked positions, so ignore_index=0 skips them
-            loss = criterion(
-                logits.view(-1, logits.size(-1)),    # (B*L, item_num+1)
-                targets.view(-1)                      # (B*L,)
-            )
+            # Logits only at masked positions: (M, V) instead of (B*L, V)
+            masked_logits = model.forward_mlm(masked_batch, mask_mask)  # (M, V)
+            masked_targets = targets[mask_mask]                        # (M,)
+            loss = criterion(masked_logits, masked_targets)
 
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             optimizer.step()
 
-            n_masked = mask_mask.sum().item()
+            n_masked = int(masked_targets.size(0))
             total_loss += loss.item() * n_masked
             num_masked += n_masked
 
@@ -226,12 +237,10 @@ def train_bert4rec(train_file, test_file, item_num, epochs=500, batch_size=64,
                 for batch in valid_batches:
                     batch = batch.to(device)
                     masked_batch, mask_mask, targets = model.mask_sequence(batch)
-                    logits = model(masked_batch)
-                    loss = criterion(
-                        logits.view(-1, logits.size(-1)),
-                        targets.view(-1)
-                    )
-                    n = mask_mask.sum().item()
+                    masked_logits = model.forward_mlm(masked_batch, mask_mask)
+                    masked_targets = targets[mask_mask]
+                    loss = criterion(masked_logits, masked_targets)
+                    n = int(masked_targets.size(0))
                     v_loss += loss.item() * n
                     v_masked += n
             eval_loss = v_loss / max(v_masked, 1)
@@ -247,7 +256,8 @@ def train_bert4rec(train_file, test_file, item_num, epochs=500, batch_size=64,
 
         val_tag = f', Val Loss: {eval_loss:.4f}' if valid_batches else ''
         print(f'Epoch {epoch}/{epochs}, MLM Loss: {avg_loss:.4f}{val_tag}, '
-              f'Best: {best_loss:.4f} (ep {best_epoch})')
+              f'Best: {best_loss:.4f} (ep {best_epoch}), {time.time()-t0:.1f}s/epoch',
+              flush=True)
 
         if patience > 0 and patience_counter >= patience:
             print(f'Early stopping at epoch {epoch} (no improvement for {patience} epochs)')
