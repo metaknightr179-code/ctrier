@@ -18,7 +18,7 @@
 \label{sec:overview}
 Sequential recommendation aims to predict the next item(s) a user is likely to interact with, given her/his historical interaction sequence $S_u = (i_1, i_2, \dots, i_T)$ ordered by interaction time. Despite the high accuracy achieved by modern transformer-based sequential recommenders, these models often suffer from two interlinked problems: (i)~short interaction sequences provide insufficient evidence for modeling the user's multiple, potentially divergent, interests, and (ii)~pure accuracy-oriented objectives bias the system toward popular head items, producing narrow recommendation lists that score poorly on diversity metrics and degrade long-term user satisfaction~\cite{shi2024trier}.
 
-We adopt the \emph{TRIER} (\emph{reTrospective and pRospective transformers for dIversified sEquential Recommendation}) framework to address these problems jointly through a two-stage pipeline, as illustrated in Figure~\ref{fig:pacer_framework}. The first stage, \emph{Retrospective Greedy Search} (Section~\ref{sec:rt}), trains a reverse-direction transformer that hallucinates plausible historical interactions that \emph{could have preceded} the observed sequence. By prepending these generated prefix items to the sequence, TRIER enriches short sequences and reconstructs the user's long-term interest trajectory. The second stage, \emph{Prospective Diversity Promoting} (Section~\ref{sec:pt}), trains a forward-direction transformer that produces diverse recommendation lists. During this stage, multiple RT-augmented views of each sequence are used to expose the model to different plausible user intents; a dedicated diversity loss then pressures the model to generate recommendation lists whose category distribution spans as many of those intents as possible, without sacrificing relevance. Finally, we enrich every item representation with learnable \emph{type embeddings} (Section~\ref{sec:type_embeddings}) derived from the item's semantic category metadata, providing an inductive bias that aligns representation learning with the category-based diversity objectives.
+We adopt the \emph{TRIER} (\emph{reTrospective and pRospective transformers for dIversified sEquential Recommendation}) framework to address these problems jointly through a two-stage pipeline, as illustrated in Figure~\ref{fig:pacer_framework}. The first stage, \emph{Retrospective Greedy Search} (Section~\ref{sec:rt}), trains a reverse-direction transformer that hallucinates plausible historical interactions that \emph{could have preceded} the observed sequence. By prepending these generated prefix items to the sequence, TRIER enriches short sequences and reconstructs the user's long-term interest trajectory. The second stage, \emph{Prospective Position-Aware Diversity Promoting} (Section~\ref{sec:pt}), trains a forward-direction transformer that produces diverse recommendation lists. During this stage, multiple RT-augmented views of each sequence are used to expose the model to different plausible user intents; a dedicated diversity loss then pressures the model to generate recommendation lists whose category distribution spans as many of those intents as possible, without sacrificing relevance. Finally, we enrich every item representation with learnable \emph{type embeddings} (Section~\ref{sec:type_embeddings}) derived from the item's semantic category metadata, providing an inductive bias that aligns representation learning with the category-based diversity objectives.
 
 % Requires \usepackage{tikz} in the main preamble.
 \input{figures/pacer_framework.tex}
@@ -56,9 +56,98 @@ The Retrospective (RT) module addresses the information shortage in short intera
 
 Training the RT module is framed as a standard autoregressive next-token prediction task on the reversed sequences. Given $\overleftarrow{S}_u[1:t]$, the RT model must predict $\overleftarrow{S}_u[t+1]$ using a cross-entropy loss over the item vocabulary. At convergence, the RT model is able to produce $K$ distinct augmented sequences via beam search of width $M=3$; taking the top-$K=5$ items from each beam candidate yields the final prefixes. We train the RT model independently first to convergence before initializing the PT module, and we freeze its weights during the prospective stage.
 
-\subsection{Prospective Diversity Promoting}
+\subsection{Prospective Position-Aware Diversity Promoting}
 \label{sec:pt}
-With the RT-augmented sequences in hand, the Prospective (PT) module simultaneously (i)~learns to rank items by relevance for the next-item prediction task and (ii)~learns to generate diverse top-$k$ recommendation lists. The PT module is a forward-direction transformer encoder (Section~\ref{sec:encoder}) with a self-supervised contrastive (NCE) auxiliary loss and a diversity-aware training objective.
+With the RT-augmented sequences in hand, the Prospective (PT) module simultaneously (i)~learns to rank items by relevance for the next-item prediction task and (ii)~learns to assemble a diverse top-$k$ recommendation list through step-wise greedy decoding, as illustrated in the right half of Figure~\ref{fig:pacer_framework}. Different from conventional re-rankers that impose a single list-wide dissimilarity objective, we promote diversity with two complementary signals that act at distinct granularities: a \emph{global intent-coverage} term, which directs the list toward the user's multiple RT-reconstructed interests as a set, and a \emph{local position-aware} term, which prevents two items occupying adjacent list positions from being near-duplicate content. At each training step we decode two lists on the same sequence in parallel, a relevance-only \emph{greedy} list $R^{greedy}$ and a \emph{diverse} list $R^{div}$, which together determine the diversity loss of Section~\ref{sec:diversity}.
+
+\paragraph{Relevance distribution.}
+Let $\mathbf{h}_T = f_{\mathrm{PT}}(S_u)$ be the terminal hidden state of the forward encoder for the observed sequence, and let $\mathbf{w}_j$ denote the $j$-th row of the position-free content-fused scoring matrix $\mathbf{W} = \mathbf{E}_{id} + \mathbf{E}_{type}$ (Section~\ref{sec:type_embeddings}; augmented with creator and music channels when those side signals are enabled). The relevance probability of candidate item $j$ is the softmax-normalized inner product
+\begin{equation}
+\label{eq:prel}
+P_{\mathrm{rel}}(j \mid S_u)
+ = \frac{\exp(\mathbf{h}_T^\top \mathbf{w}_j)}
+        {\sum_{j' \in \mathcal{I}} \exp(\mathbf{h}_T^\top \mathbf{w}_{j'})}.
+\end{equation}
+
+\paragraph{Coverage of RT-reconstructed intents.}
+Beam search in the RT stage returns $M$ augmented views $S_u^{a} = (r^a_K, \ldots, r^a_1) \oplus S_u$, $a=1,\ldots,M$, each corresponding to a different plausible history and therefore to a different latent intent. Let $\mathbf{f}_a = f_{\mathrm{PT}}(S_u^{a})$ be the prospective encoder's terminal state for view $a$, and $P_a^u$ the beam generation probability of that view. The candidate-item distribution implied by intent $a$ is the sharpened softmax
+\begin{equation}
+\label{eq:pva}
+P_a(j)
+ = \frac{\exp(10\,\mathbf{f}_a^\top \mathbf{w}_j)}
+        {\sum_{j' \in \mathcal{I}} \exp(10\,\mathbf{f}_a^\top \mathbf{w}_{j'})},
+\end{equation}
+where the multiplier $10$ (temperature $0.1$) concentrates each intent on a small set of characteristic items. At generation step $s \geq 2$, after the prefix $R^{div}_{s-1} = (j_1,\ldots,j_{s-1})$ has been chosen, we re-encode the prefix with the same encoder to obtain $\mathbf{h}_{R} = f_{\mathrm{PT}}(R^{div}_{s-1})$, and compute how strongly each reconstructed intent is already served by the current list:
+\begin{equation}
+\alpha_{a,s}
+ = \frac{\exp(\mathbf{f}_a^\top \mathbf{h}_R)}
+        {\sum_{b=1}^{M} \exp(\mathbf{f}_b^\top \mathbf{h}_R)}.
+\end{equation}
+The \emph{reserved} weight of intent $a$ is then
+\begin{equation}
+\label{eq:wra}
+W_{R,a}
+ = 1 - \frac{P_a^u\,\alpha_{a,s}}
+             {\sum_{b=1}^{M} P_b^u\,\alpha_{b,s}},
+\end{equation}
+and the global, list-set-level coverage score of candidate $j$ is
+\begin{equation}
+\label{eq:pcov}
+P_{\mathrm{cov}}(j; R^{div}_{s-1})
+ = \sum_{a=1}^{M} W_{R,a}\, P_a(j).
+\end{equation}
+An intent that is both likely under the RT model ($P_a^u$ high) and well reflected in the prefix ($\alpha_{a,s}$ high) is downweighted in $W_{R,a}$, so the decoder is pushed toward items belonging to still-uncovered intents. This term is \emph{order agnostic}: it depends only on which items the list contains so far, not on their positions.
+
+\paragraph{Position-aware consecutive penalty.}
+Coverage alone does not constrain local list smoothness: two items drawn from different reconstructed intents may still be near duplicates in content space, and a list that alternates such twins feels repetitive to the user. We therefore add a strictly local signal conditioned on the item at the immediately preceding list position. Let $\mathbf{v}_j$ be the pretrained item content embedding (item2vec). At step $s \geq 2$, the consecutive-similarity penalty for candidate $j$ is
+\begin{equation}
+\label{eq:consec_score}
+C_s(j)
+ = \cos(\mathbf{v}_j, \mathbf{v}_{j_{s-1}})
+ = \frac{\mathbf{v}_j^\top \mathbf{v}_{j_{s-1}}}
+        {\lVert \mathbf{v}_j \rVert_2\, \lVert \mathbf{v}_{j_{s-1}} \rVert_2}.
+\end{equation}
+$C_s$ is zero for the first position (there is no predecessor) and involves only the single previous item, which is what makes the diversification \emph{position aware}: the same candidate receives a different penalty at different positions of the same list depending on its immediate predecessor.
+
+\paragraph{Step-wise combined decoding.}
+The two signals and relevance are combined into the selection score at step $s$:
+\begin{equation}
+\label{eq:gen_score}
+\begin{aligned}
+Q_s(j)
+ &= (1-\lambda)\, P_{\mathrm{rel}}(j)
+  + \lambda\, P_{\mathrm{cov}}(j; R^{div}_{s-1})
+  - \lambda_c\, \mathbb{1}[s \geq 2]\, C_s(j),\\
+j_s &= \mathop{\arg\max}_{j \in \mathcal{I} \setminus R^{div}_{s-1}} Q_s(j),
+\end{aligned}
+\end{equation}
+where already selected items are excluded by a hard mask, $\lambda \in [0,1]$ trades relevance for intent coverage, and $\lambda_c \geq 0$ controls the consecutive penalty. The parallel greedy path selects $g_s = \arg\max_{j \notin R^{greedy}_{s-1}} P_{\mathrm{rel}}(j)$; both paths share the relevance-maximizing first item $j_1 = \arg\max_j P_{\mathrm{rel}}(j)$ and then diverge. Setting $\lambda = \lambda_c = 0$ recovers pure greedy ranking (the ``nodiv'' baseline). Importantly, $\lambda$ and $\lambda_c$ are \emph{inference-time} knobs: the losses of Section~\ref{sec:diversity} shape the embedding geometry so that diverse lists exist, while the operating point is tuned after training without any retraining. The complete dual-path decoding procedure is given in Algorithm~\ref{alg:pdp}; $k$ items are generated during training and $20$ at test time.
+
+% Requires \usepackage{algorithm} and \usepackage{algpseudocode} in the
+% main preamble. algorithm* spans both columns in a two-column layout.
+\begin{algorithm*}[t]
+\caption{Position-Aware Prospective List Generation}
+\label{alg:pdp}
+\begin{algorithmic}[1]
+\Require terminal state $\mathbf{h}_T$; RT intent states $\{\mathbf{f}_a\}_{a=1}^{M}$ with beam probabilities $\{P_a^u\}$; scoring vectors $\{\mathbf{w}_j\}$ and content vectors $\{\mathbf{v}_j\}$; list length $k$; trade-off weights $\lambda, \lambda_c$
+\State $P_{\mathrm{rel}}(j) \gets \mathrm{softmax}_{j'}\!\left(\mathbf{h}_T^\top \mathbf{w}_{j'}\right)$
+\State $P_a(j) \gets \mathrm{softmax}_{j'}\!\left(10\,\mathbf{f}_a^\top \mathbf{w}_{j'}\right)$ for every intent $a$ \Comment{sharpened intent distributions}
+\State $R^{greedy} \gets ()$; $R^{div} \gets ()$; candidate masks $\mathcal{M}_g, \mathcal{M}_d \gets \mathcal{I}$
+\State $j_1 \gets \arg\max_{j \in \mathcal{I}} P_{\mathrm{rel}}(j)$; append $j_1$ to both lists; remove $j_1$ from $\mathcal{M}_g,\mathcal{M}_d$
+\For{$s = 2$ \textbf{to} $k$}
+  \State $g_s \gets \arg\max_{j \in \mathcal{M}_g} P_{\mathrm{rel}}(j)$ \Comment{greedy (relevance-only) path}
+  \State $\mathbf{h}_R \gets f_{\mathrm{PT}}(R^{div}_{s-1})$ \Comment{re-encode the selected prefix}
+  \State $\alpha_{a,s} \gets \mathrm{softmax}_{b}\!\left(\mathbf{f}_b^\top \mathbf{h}_R\right)$;\quad
+         $W_{R,a} \gets 1 - \dfrac{P_a^u \alpha_{a,s}}{\sum_{b} P_b^u \alpha_{b,s}}$
+  \State $P_{\mathrm{cov}}(j) \gets \sum_{a=1}^{M} W_{R,a}\, P_a(j)$
+  \State $C_s(j) \gets \dfrac{\mathbf{v}_j^\top \mathbf{v}_{j_{s-1}}}{\lVert \mathbf{v}_j \rVert_2 \lVert \mathbf{v}_{j_{s-1}} \rVert_2}$ \Comment{adjacent-position penalty}
+  \State $Q_s(j) \gets (1-\lambda) P_{\mathrm{rel}}(j) + \lambda P_{\mathrm{cov}}(j) - \lambda_c C_s(j)$
+  \State $j_s \gets \arg\max_{j \in \mathcal{M}_d} Q_s(j)$ \Comment{diverse path}
+  \State append $g_s$ to $R^{greedy}$ and $j_s$ to $R^{div}$; remove them from $\mathcal{M}_g,\mathcal{M}_d$
+\EndFor
+\Ensure greedy list $R^{greedy} = (j_1, g_2, \ldots, g_k)$ and diverse list $R^{div} = (j_1, j_2, \ldots, j_k)$
+\end{algorithmic}
+\end{algorithm*}
 
 \paragraph{Contrastive learning with RT augmentation.}
 The RT module produces $M$ distinct augmented views of each training sequence via beam search. Following DuoRec-style self-supervision~\cite{wang2022duorec}, we treat two RT-augmented views of the same user sequence as a positive pair, and views drawn from different users or from within the same batch as negatives. Denoting the sequence-level representation of view $v$ of user $u$ as $\mathbf{h}_u^{(v)}$ (the final hidden state of the PT encoder), the NCE loss is:
@@ -67,20 +156,6 @@ The RT module produces $M$ distinct augmented views of each training sequence vi
                               {\sum_{u'} \sum_{v_1, v_2} \exp(\text{sim}(\mathbf{h}_u^{(v_1)}, \mathbf{h}_{u'}^{(v_2)}) / \tau)},
 \end{equation}
 where $\text{sim}(\cdot,\cdot)$ is the dot product and $\tau=1$ is the temperature. The NCE loss forces the encoder to produce user representations that are invariant to the particular RT augmentation chosen, implicitly capturing the user's latent intent rather than superficial surface details of the sequence.
-
-\paragraph{Diversity-aware generation.}
-At each training step, the PT module runs two generation paths on the same sequence: a \emph{greedy (relevance-only) path}, which ranks items purely by the dot product of the sequence representation with item embeddings, and a \emph{diverse path}, which ranks items by a combined score that interpolates between a relevance score and a diversity score.
-
-The relevance score for candidate item $j$ at step $s$ is simply $\text{rel}(j) = \mathbf{h}_T^\top \mathbf{E}[j]$. The diversity score at step $s$ measures the pairwise category distance between item $j$ and the items already selected in the current list $R_{s-1} = (j_1, \dots, j_{s-1})$, using the Inverse List Diversity (ILD) formulation:
-\begin{equation}
-\text{div}(j; R_{s-1}) = \frac{1}{s-1} \sum_{j' \in R_{s-1}} \lVert \mathbf{c}_j - \mathbf{c}_{j'} \rVert_2,
-\end{equation}
-where $\mathbf{c}_j \in \{0,1\}^{C}$ is the multi-hot category vector of item $j$. The combined score is then
-\begin{equation}
-\label{eq:gen_score}
-\text{score}(j; R_{s-1}) = \lambda \cdot \text{div}(j; R_{s-1}) + (1-\lambda) \cdot \text{rel}(j),
-\end{equation}
-where $\lambda \in [0,1]$ controls the trade-off between diversity and relevance. Setting $\lambda = 0$ recovers pure relevance ranking (the ``nodiv'' baseline), while higher values increasingly favor items from underrepresented categories.
 
 \subsection{Dense Next-Item Supervision}
 \label{sec:dense}
