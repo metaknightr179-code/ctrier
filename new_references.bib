@@ -1,44 +1,56 @@
-% New references cited in implementation_details.tex / approach.tex.
-% Merge these entries into the paper's main .bib file.
+% =====================================================================
+% Bibliography additions and corrections for the PACER paper.
+%
+% Section A: entries that REPLACE wrong/placeholder entries currently
+%            in the main .bib (same keys -- overwrite).
+% Section B: genuinely new entries to add.
+%
+% After merging, every \cite key used in approach.tex and
+% implementation_details.tex resolves:
+%   adomavicius2012, gao2022kuairand, gao2022kuairec, harper2015,
+%   hidasi2016session, kang2018self, kingma2015, krichene2020sampled,
+%   li2023text, ni2023microlens, shi2024trier, sun2019bert4rec,
+%   vaswani2017, wang2022duorec, ziegler2005
+% =====================================================================
 
+% ---------------------------------------------------------------------
+% A. CORRECTIONS (replace existing entries with the same key)
+% ---------------------------------------------------------------------
+
+% KuaiRec: the existing entry lists SIGIR and pp. 2245--2251, which is
+% wrong. Official bib from https://kuairec.com: CIKM '22, pp. 540--550.
+@inproceedings{gao2022kuairec,
+  author    = {Gao, Chongming and Li, Shijun and Lei, Wenqiang and Chen, Jiawei and Li, Biao and Jiang, Peng and He, Xiangnan and Mao, Jiaxin and Chua, Tat{-}Seng},
+  title     = {{KuaiRec}: A Fully-Observed Dataset and Insights for Evaluating Recommender Systems},
+  booktitle = {Proceedings of the 31st ACM International Conference on Information and Knowledge Management},
+  series    = {CIKM '22},
+  location  = {Atlanta, GA, USA},
+  pages     = {540--550},
+  numpages  = {11},
+  year      = {2022},
+  publisher = {Association for Computing Machinery},
+  doi       = {10.1145/3511808.3557220}
+}
+
+% TRIER: the placeholder title/venue ("...for Short Sequences") does
+% not exist. It is a journal article in ACM TOIS.
 @article{shi2024trier,
-  author  = {Shi, Chaoyu and Ren, Pengjie and Fu, Dongjie and Xin, Xin and Yang, Shansong and Cai, Fei and Ren, Zhaochun and Chen, Zhumin},
-  title   = {Diversifying Sequential Recommendation with Retrospective and Prospective Transformers},
-  journal = {ACM Transactions on Information Systems},
-  volume  = {42},
-  number  = {5},
+  author    = {Shi, Chaoyu and Ren, Pengjie and Fu, Dongjie and Xin, Xin and Yang, Shansong and Cai, Fei and Ren, Zhaochun and Chen, Zhumin},
+  title     = {Diversifying Sequential Recommendation with Retrospective and Prospective Transformers},
+  journal   = {ACM Transactions on Information Systems},
+  volume    = {42},
+  number    = {5},
   articleno = {132},
-  numpages = {37},
-  year    = {2024},
-  publisher = {Association for Computing Machinery},
-  address = {New York, NY, USA},
-  doi     = {10.1145/3653016}
-}
-
-@article{harper2015,
-  author  = {Harper, F. Maxwell and Konstan, Joseph A.},
-  title   = {The {MovieLens} Datasets: History and Context},
-  journal = {ACM Transactions on Interactive Intelligent Systems},
-  volume  = {5},
-  number  = {4},
-  articleno = {19},
-  pages   = {1--19},
-  year    = {2015},
-  publisher = {Association for Computing Machinery},
-  doi     = {10.1145/2827872}
-}
-
-@inproceedings{ni2023microlens,
-  author    = {Ni, Yongxin and Cheng, Yu and Liu, Xiangyan and Fu, Junchen and Li, Youhua and He, Xiangnan and Zhang, Yongfeng and Yuan, Fajie},
-  title     = {A Content-Driven Micro-Video Recommendation Dataset at Scale},
-  booktitle = {Proceedings of the 34th ACM International Conference on Information and Knowledge Management},
-  series    = {CIKM '25},
-  year      = {2025},
+  numpages  = {37},
+  year      = {2024},
   publisher = {Association for Computing Machinery},
   address   = {New York, NY, USA},
-  doi       = {10.1145/3746252.3761655},
-  note      = {Preprint arXiv:2309.15379 (2023)}
+  doi       = {10.1145/3653016}
 }
+
+% ---------------------------------------------------------------------
+% B. NEW ENTRIES
+% ---------------------------------------------------------------------
 
 @inproceedings{gao2022kuairand,
   author    = {Gao, Chongming and Li, Shijun and Zhang, Yuan and Chen, Jiawei and Li, Biao and Lei, Wenqiang and Jiang, Peng and He, Xiangnan},
@@ -51,4 +63,60 @@
   year      = {2022},
   publisher = {Association for Computing Machinery},
   doi       = {10.1145/3511808.3557624}
+}
+
+% Sampled-metrics inconsistency (full-catalog evaluation)
+@inproceedings{krichene2020sampled,
+  author    = {Krichene, Walid and Rendle, Steffen},
+  title     = {On Sampled Metrics for Item Recommendation},
+  booktitle = {Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining},
+  series    = {KDD '20},
+  pages     = {1748--1757},
+  year      = {2020},
+  publisher = {Association for Computing Machinery},
+  doi       = {10.1145/3394486.3403226}
+}
+
+% Intra-List Distance (ILD)
+@inproceedings{ziegler2005,
+  author    = {Ziegler, Cai{-}Nicolas and McNee, Sean M. and Konstan, Joseph A. and Lausen, Georg},
+  title     = {Improving Recommendation Lists through Topic Diversification},
+  booktitle = {Proceedings of the 14th International Conference on World Wide Web},
+  series    = {WWW '05},
+  pages     = {22--32},
+  year      = {2005},
+  publisher = {Association for Computing Machinery},
+  doi       = {10.1145/1060745.1060754}
+}
+
+% Category / aggregate coverage (CC)
+@article{adomavicius2012,
+  author  = {Adomavicius, Gediminas and Kwon, YoungOk},
+  title   = {Improving Aggregate Recommendation Diversity Using Ranking-Based Techniques},
+  journal = {IEEE Transactions on Knowledge and Data Engineering},
+  volume  = {24},
+  number  = {5},
+  pages   = {896--911},
+  year    = {2012},
+  publisher = {IEEE},
+  doi     = {10.1109/TKDE.2011.15}
+}
+
+% Adam optimizer
+@inproceedings{kingma2015,
+  author    = {Kingma, Diederik P. and Ba, Jimmy},
+  title     = {{Adam}: A Method for Stochastic Optimization},
+  booktitle = {Proceedings of the 3rd International Conference on Learning Representations (ICLR)},
+  year      = {2015}
+}
+
+% RecFormer (attribute/type-embedding inspiration)
+@inproceedings{li2023text,
+  author    = {Li, Jiacheng and Wang, Ming and Li, Jin and Fu, Jinmiao and Shen, Xin and Shang, Jingbo and McAuley, Julian},
+  title     = {Text Is All You Need: Learning Language Representations for Sequential Recommendation},
+  booktitle = {Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining},
+  series    = {KDD '23},
+  pages     = {1258--1267},
+  year      = {2023},
+  publisher = {Association for Computing Machinery}
 }

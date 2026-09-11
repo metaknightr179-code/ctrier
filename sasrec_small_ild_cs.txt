@@ -1,0 +1,5 @@
+variant	n_users	ILD@20	CS@20
+kuairec_highest_individual	1411	1.530306	0.103021
+kuairec_highest_average	1411	1.530306	0.103021
+kuairec_first_individual	1411	1.530306	0.103021
+kuairec_first_average	1411	1.530306	0.103021
