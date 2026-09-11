@@ -50,7 +50,7 @@ class GRU_PT(nn.Module):
         self.args = args
         self.inf = torch.tensor([0.0], device=args.device)
 
-        self.lmd_consec = getattr(args, 'lmd_consec', 0.01)
+        self.gamma_consec = getattr(args, 'gamma_consec', 0.01)
         self.use_consec = not getattr(args, 'no_consec', False)
         if not self.use_consec:
             print("[GRU_PT] Consecutive similarity loss DISABLED (-no_consec flag set)")
@@ -324,7 +324,7 @@ class GRU_PT(nn.Module):
         targets = targets.unsqueeze(-1)
         rec_loss = -output.log_softmax(dim=-1).gather(dim=-1, index=targets).squeeze(-1)
         main_loss = rec_loss.mean()
-        loss = main_loss + nce_loss + div_loss + self.lmd_consec * consec_loss
+        loss = main_loss + nce_loss + div_loss + self.gamma_consec * consec_loss
         return loss, main_loss
 
     # ------------------------------------------------------------------

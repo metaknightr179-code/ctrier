@@ -354,6 +354,8 @@ if __name__ == '__main__':
             if torch.cuda.is_available():
                 item2vec = item2vec.cuda()
             print(f"Using model's item_embedding.weight ({item2vec.shape}) for diversity loss during training")
+        # Expose item2vec to the model for the score-time consecutive penalty (-lmd_consec)
+        model.item2vec = item2vec.to(model.device)
 
         # Create optimizer (Adam)
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -507,6 +509,8 @@ if __name__ == '__main__':
             if torch.cuda.is_available():
                 item2vec = item2vec.cuda()
             print(f"Using model's item_embedding.weight ({item2vec.shape}) for ILD/CS metrics")
+        # Expose item2vec to the model for the score-time consecutive penalty (-lmd_consec)
+        model.item2vec = item2vec.to(model.device)
         
         # Determine starting epoch (use -start_epoch if not resuming)
         next_epoch = args.start_epoch if args.start_epoch > 1 else 1
@@ -632,6 +636,8 @@ if __name__ == '__main__':
             if torch.cuda.is_available():
                 item2vec = item2vec.cuda()
             print(f"Using model's item_embedding.weight ({item2vec.shape}) for ILD/CS metrics")
+        # Expose item2vec to the model for the score-time consecutive penalty (-lmd_consec)
+        model.item2vec = item2vec.to(model.device)
         
         # Determine starting epoch (use -start_epoch if not resuming)
         next_epoch = args.start_epoch if args.start_epoch > 1 else 1

@@ -59,8 +59,8 @@ class TRIER_PT(nn.Module):
         self.args = args
         self.inf = torch.tensor([0.0], device=args.device)  # Used for masking
         
-        # Consecutive similarity loss weight (configurable via -lmd_consec, default 0.01)
-        self.lmd_consec = getattr(args, 'lmd_consec', 0.01)
+        # Consecutive similarity loss weight (configurable via -gamma_consec, default 0.01)
+        self.gamma_consec = getattr(args, 'gamma_consec', 0.01)
         # Respect -no_consec flag: disables consecutive similarity loss but keeps overall diversity loss
         self.use_consec = not getattr(args, 'no_consec', False)
         if not self.use_consec:
@@ -517,6 +517,21 @@ class TRIER_PT(nn.Module):
         
         # Combine relevance and diversity scores
         score = lamb * div_score + (1 - lamb) * rel_score
+
+        # Position-aware consecutive penalty: demote candidates content-similar
+        # to the item chosen at the PREVIOUS position of the list (item2vec space).
+        # Weighted by -lmd_consec (default 0 = off); needs model.item2vec set externally.
+        lmd_consec = getattr(self.args, 'lmd_consec', 0.0)
+        vecs = getattr(self, 'item2vec', None)
+        if lmd_consec > 0 and vecs is not None and len(output_token) > 0:
+            if vecs.device != self.device:
+                vecs = vecs.to(self.device)
+                self.item2vec = vecs
+            last_vec = vecs[output_token[-1]]  # [batch, d] item at previous list position
+            last_vec = last_vec / (last_vec.norm(dim=-1, keepdim=True) + 1e-8)
+            table = vecs / (vecs.norm(dim=-1, keepdim=True) + 1e-8)  # [n_items, d]
+            cos = last_vec @ table.t()         # [batch, n_items] cosine to previous item
+            score = score - lmd_consec * cos
         
         return score
 
@@ -655,7 +670,7 @@ class TRIER_PT(nn.Module):
             main_loss = rec_loss.mean()
 
         # Total loss = reconstruction + NCE + diversity + consecutive similarity
-        loss = main_loss + nce_loss + div_loss + self.lmd_consec * consec_loss
+        loss = main_loss + nce_loss + div_loss + self.gamma_consec * consec_loss
 
         return loss, main_loss
 

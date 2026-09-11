@@ -110,7 +110,7 @@ run_eval () {
 
     local DIV_FLAG="-lamb 0"
     if [ "$MODE" = "greedy" ] && [ "$LAMB" != "0" ]; then
-        DIV_FLAG="-div -lamb ${LAMB} -lmd_consec ${CONSEC}"
+        DIV_FLAG="-div -lamb ${LAMB} -gamma_consec ${CONSEC}"
     fi
     local IN_DIR="./rt_dummy_for_duorec"
     [ "$MODE" = "greedy" ] && IN_DIR="$RT_DIR"
