@@ -23,6 +23,10 @@
 #   greedy big matrix   -> test_result.txt         (needs save_rt_fix_<variant>)
 #   greedy small matrix -> test_result_small.txt   (needs KuaiRec_small_eval/<variant>)
 #
+# The 'consec' group sweeps the score-time penalty (-lmd_consec) at lamb01 and
+# writes test_result_c*.txt / test_result_small_c*.txt; it runs greedy only,
+# because topk mode ranks the full catalog and never invokes the scorer.
+#
 # Usage:
 #   CUDA_VISIBLE_DEVICES=0 bash eval_dense_kuairec.sh
 #   nohup bash eval_dense_kuairec.sh > eval_dense_kuairec.log 2>&1 &
@@ -111,6 +115,7 @@ run_eval () {
     local DIV_FLAG="-lamb 0"
     if [ "$MODE" = "greedy" ] && [ "$LAMB" != "0" ]; then
         DIV_FLAG="-div -lamb ${LAMB} -gamma_consec ${CONSEC}"
+        [ -n "$LMD" ] && [ "$LMD" != "0" ] && DIV_FLAG="$DIV_FLAG -lmd_consec ${LMD}"
     fi
     local IN_DIR="./rt_dummy_for_duorec"
     [ "$MODE" = "greedy" ] && IN_DIR="$RT_DIR"
@@ -169,11 +174,19 @@ for GROUP in dense author music dur authormusic typeall; do
       FAMS=("${TYPEALL_FAMILIES[@]}")
       EXTRA="$AUTHOR_EXTRA $MUSIC_EXTRA"
       ;;
+    consec)
+      # SUFFIX|LAMB|CONSEC|LMD — outputs get _${SUFFIX} appended to the filename
+      CFGS=("c001|0.01|0|0.01" "c005|0.01|0|0.05" "c01|0.01|0|0.1" "c02|0.01|0|0.2")
+      FAMS=("${FAMILIES[@]}")
+      EXTRA=""
+      OUTSUF_MODE=1
+      ;;
   esac
 for FAM in "${FAMS[@]}"; do
     IFS='|' read -r FAM_NAME DIR_PREFIX TYPE_FLAG <<< "$FAM"
     for CFG in "${CFGS[@]}"; do
-        IFS='|' read -r SUFFIX LAMB CONSEC <<< "$CFG"
+        IFS='|' read -r SUFFIX LAMB CONSEC LMD <<< "$CFG"
+        OUTSUF=""; [ "$OUTSUF_MODE" = "1" ] && OUTSUF="_${SUFFIX}"
         for VAR in "${VARIANTS[@]}"; do
             PT_DIR="./${DIR_PREFIX}${SUFFIX}_${VAR}"
             [ ! -d "$PT_DIR/model" ] && { echo "SKIP: missing $PT_DIR"; continue; }
@@ -184,7 +197,9 @@ for FAM in "${FAMS[@]}"; do
             SMALL_DIR="./KuaiRec_small_eval/${VAR}"
             RT_DIR="./save_rt_fix_${VAR}"
 
-            # 1. top-k, big matrix (pure accuracy, no RT)
+            # 1. top-k, big matrix (pure accuracy, no RT) — skipped for consec
+            # sweep (topk ranking bypasses the scorer, lmd_consec has no effect)
+            if [ -z "$OUTSUF" ]; then
             run_eval "$PT_DIR" "$LATEST" "$VAR_DIR" \
                 "${VAR_DIR}/test-v0.txt" \
                 "${VAR_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt" \
@@ -203,15 +218,16 @@ for FAM in "${FAMS[@]}"; do
             else
                 echo "SKIP small topk: ${SMALL_DIR}/test-v0.txt missing"
             fi
+            fi
 
-            # 3. greedy, big matrix (RT beam + lambda blending)
+            # 3. greedy, big matrix (RT beam + lambda blending + consec penalty)
             if [ -d "${RT_DIR}/model" ]; then
                 run_eval "$PT_DIR" "$LATEST" "$VAR_DIR" \
                     "${VAR_DIR}/test-v0.txt" \
                     "${VAR_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt" \
                     "$TYPE_FLAG" "greedy" "$RT_DIR" \
-                    "${PT_DIR}/test_result.txt" \
-                    "${FAM_NAME}_${SUFFIX}_${VAR}_greedy_big" "$EXTRA"
+                    "${PT_DIR}/test_result${OUTSUF}.txt" \
+                    "${FAM_NAME}_${SUFFIX}_${VAR}_greedy_big" "$EXTRA" "$LMD"
             else
                 echo "SKIP greedy big: RT missing in ${RT_DIR}/model"
             fi
@@ -222,8 +238,8 @@ for FAM in "${FAMS[@]}"; do
                     "${SMALL_DIR}/test-v0.txt" \
                     "${SMALL_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt" \
                     "$TYPE_FLAG" "greedy" "$RT_DIR" \
-                    "${PT_DIR}/test_result_small.txt" \
-                    "${FAM_NAME}_${SUFFIX}_${VAR}_greedy_small" "$EXTRA"
+                    "${PT_DIR}/test_result_small${OUTSUF}.txt" \
+                    "${FAM_NAME}_${SUFFIX}_${VAR}_greedy_small" "$EXTRA" "$LMD"
             fi
             echo ""
         done

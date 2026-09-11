@@ -457,7 +457,9 @@ class TRIER_PT(nn.Module):
             else:
                 # Subsequent items: combine relevance and diversity scores
                 score = self.calculate_score(rel_score, output_token, F, attention_weght)
-                top1 = (score * mask.clone()).argmax(-1)
+                # masked_fill (not score*mask): the consec penalty can push valid
+                # scores below 0, and masked items sit at exactly 0 -> duplicates.
+                top1 = score.masked_fill(mask == 0, -1e9).argmax(-1)
                 greedy_top1 = (rel_score * mask_greedy.clone()).argmax(-1)
             
             # Mask out already recommended items
