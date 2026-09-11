@@ -30,7 +30,12 @@
 %    environment of the cuted package instead of figure*.
 \begin{figure*}[t!]
 \centering
-\resizebox{\textwidth}{!}{%
+% Overall size knob: fraction of the (two-column-spanning) \textwidth.
+%   1.0\textwidth = full span (current); 0.8/0.7 = smaller, auto-centred.
+% For a one-column figure: change figure* -> figure and use \columnwidth here.
+% Prefer 0.85-1.0: below ~0.7 the scaled math/labels get hard to read; in that
+% case shrink internals instead (font=\footnotesize, smaller node dimensions).
+\resizebox{0.85\textwidth}{!}{%
 \begin{tikzpicture}[
   font=\small,
   box/.style={draw, align=center, inner sep=4pt,
