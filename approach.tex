@@ -18,18 +18,10 @@
 \label{sec:overview}
 Sequential recommendation aims to predict the next item(s) a user is likely to interact with, given her/his historical interaction sequence $S_u = (i_1, i_2, \dots, i_T)$ ordered by interaction time. Despite the high accuracy achieved by modern transformer-based sequential recommenders, these models often suffer from two interlinked problems: (i)~short interaction sequences provide insufficient evidence for modeling the user's multiple, potentially divergent, interests, and (ii)~pure accuracy-oriented objectives bias the system toward popular head items, producing narrow recommendation lists that score poorly on diversity metrics and degrade long-term user satisfaction~\cite{shi2024trier}.
 
-We adopt the \emph{TRIER} (\emph{reTrospective and pRospective transformers for dIversified sEquential Recommendation}) framework to address these problems jointly through a two-stage pipeline, as illustrated in Figure~\ref{fig:trier_framework}. The first stage, \emph{Retrospective Greedy Search} (Section~\ref{sec:rt}), trains a reverse-direction transformer that hallucinates plausible historical interactions that \emph{could have preceded} the observed sequence. By prepending these generated prefix items to the sequence, TRIER enriches short sequences and reconstructs the user's long-term interest trajectory. The second stage, \emph{Prospective Diversity Promoting} (Section~\ref{sec:pt}), trains a forward-direction transformer that produces diverse recommendation lists. During this stage, multiple RT-augmented views of each sequence are used to expose the model to different plausible user intents; a dedicated diversity loss then pressures the model to generate recommendation lists whose category distribution spans as many of those intents as possible, without sacrificing relevance. Finally, we enrich every item representation with learnable \emph{type embeddings} (Section~\ref{sec:type_embeddings}) derived from the item's semantic category metadata, providing an inductive bias that aligns representation learning with the category-based diversity objectives.
+We adopt the \emph{TRIER} (\emph{reTrospective and pRospective transformers for dIversified sEquential Recommendation}) framework to address these problems jointly through a two-stage pipeline, as illustrated in Figure~\ref{fig:pacer_framework}. The first stage, \emph{Retrospective Greedy Search} (Section~\ref{sec:rt}), trains a reverse-direction transformer that hallucinates plausible historical interactions that \emph{could have preceded} the observed sequence. By prepending these generated prefix items to the sequence, TRIER enriches short sequences and reconstructs the user's long-term interest trajectory. The second stage, \emph{Prospective Diversity Promoting} (Section~\ref{sec:pt}), trains a forward-direction transformer that produces diverse recommendation lists. During this stage, multiple RT-augmented views of each sequence are used to expose the model to different plausible user intents; a dedicated diversity loss then pressures the model to generate recommendation lists whose category distribution spans as many of those intents as possible, without sacrificing relevance. Finally, we enrich every item representation with learnable \emph{type embeddings} (Section~\ref{sec:type_embeddings}) derived from the item's semantic category metadata, providing an inductive bias that aligns representation learning with the category-based diversity objectives.
 
-% TODO: add \usepackage{graphicx} + \includegraphics{figures/trier_framework.pdf}
-% \begin{figure}[t]
-% \centering
-% \includegraphics[width=\linewidth]{figures/trier_framework.pdf}
-% \caption{Overall architecture of TRIER. Stage 1 (RT): reverse transformer predicts
-% plausible historical items, producing $K$ augmented prefixes. Stage 2 (PT): forward
-% transformer, operating over the RT-augmented sequence, generates a diversity-aware
-% top-$k$ recommendation list via the diversity--relevance combined score.}
-% \label{fig:trier_framework}
-% \end{figure}
+% Requires \usepackage{tikz} in the main preamble.
+\input{figures/pacer_framework.tex}
 
 \subsection{Sequence Encoder}
 \label{sec:encoder}

@@ -1,0 +1,152 @@
+% =============================================================================
+% PACER framework figure (self-contained TikZ; only requires \usepackage{tikz}
+% in the main preamble). Components are grounded in the implementation:
+%   - RT  : TRIER_RT reverse transformer, trained first, frozen during PT
+%   - fuse: item + type(masked-mean category) + author + music + position
+%   - PT  : forward transformer with dense per-position CE + cross-view NCE
+%   - gen : step-wise generate_by_score; greedy vs combined-score diverse path
+%   - losses: L_ce (dense), L_nce, L_div (ILD advantage), L_consec (adjacent)
+%
+% LAYOUT NOTE: node minimum widths MUST be at least as wide as their longest
+% text line. TikZ silently grows narrower nodes, sliding their west anchor
+% left so neighbours overlap and arrows then point "backwards". If a box text
+% changes, re-check its width (compile + render) before trusting the arrows.
+%
+% Input this file from approach.tex with \input{figures/pacer_framework.tex}.
+% =============================================================================
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
+
+\begin{figure*}[t]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\small,
+  box/.style={draw, align=center, inner sep=4pt,
+              minimum height=0.95cm, thick},
+  data/.style={box, fill=gray!12, draw=gray!50},
+  rtb/.style={box, fill=blue!8, draw=blue!45},
+  ptb/.style={box, fill=green!8, draw=green!40!black},
+  emb/.style={box, fill=purple!8, draw=purple!45},
+  loss/.style={box, fill=orange!12, draw=orange!60!black},
+  lst/.style={box, fill=yellow!18, draw=yellow!70!black},
+  arr/.style={-{Stealth[length=2.2mm]}, semithick},
+  darr/.style={arr, dashed, gray!60!black},
+  lbl/.style={font=\scriptsize, fill=white, inner sep=1.5pt},
+  note/.style={font=\scriptsize, text=gray!60!black, align=center},
+  stage/.style={draw=gray!45, dashed, rounded corners=4pt, inner sep=8pt},
+  stagelbl/.style={font=\small\bfseries, text=gray!55!black}
+]
+
+% ---------------- main forward pipeline (y = 3.4) ----------------
+\node[data, minimum width=2.5cm] (seq) at (0,3.4)
+  {Observed\\ sequence\\ $S_u=(i_1,\ldots,i_T)$};
+
+\node[emb, minimum width=4.8cm, minimum height=2.0cm] (fuse) at (4.1,3.4)
+  {Content-fused representation\\[2pt]
+   $\mathbf w_j=\mathbf e^{id}+\mathbf e^{ty}$\\
+   $\phantom{\mathbf w_j=}\ +\mathbf e^{au}+\mathbf e^{mu}$\\[1pt]
+   $\mathbf h_t^{(0)}=\mathrm{LN}(\mathbf w_{s_t}+\mathbf p_t)$};
+\node[note, anchor=north] (fusenote) at (fuse.south)
+  {categories: masked mean;\quad missing channel $=\mathbf 0$};
+
+\node[ptb, minimum width=3.0cm, minimum height=1.4cm] (pte) at (8.6,3.4)
+  {Forward\\ Transformer\\ (PT encoder)};
+
+\node[ptb, minimum width=3.2cm, minimum height=1.4cm] (hs) at (12.2,3.4)
+  {All-position\\ hidden states\\ $\mathbf h_1,\ldots,\mathbf h_T$};
+
+\draw[arr] (seq.east) -- (fuse.west);
+\draw[arr] (fuse.east) -- node[lbl, font=\tiny]{views} (pte.west);
+\draw[arr] (pte.east) -- (hs.west);
+
+% ---------------- Stage 1: RT (y = 6.8) ----------------
+\node[rtb, minimum width=2.3cm] (rev) at (2.5,6.8)
+  {Reversed\\ sequence $\overleftarrow S_u$};
+\node[rtb, minimum width=3.2cm, minimum height=1.2cm] (rte) at (5.8,6.8)
+  {Reverse Transformer (RT),\\ trained first, then frozen};
+\node[rtb, minimum width=2.3cm] (beam) at (9.0,6.8)
+  {Beam search\\ $M{=}3,\ K{=}5$};
+\node[rtb, minimum width=3.3cm, minimum height=1.4cm] (pref) at (12.2,6.8)
+  {Augmented prefixes\\ $(r_K,\ldots,r_1)$\\ {\scriptsize two views per user}};
+
+\draw[arr] (seq.north) |- node[lbl, pos=0.78]{reverse} (rev.west);
+\draw[arr] (rev.east) -- (rte.west);
+\draw[arr] (rte.east) -- (beam.west);
+\draw[arr] (beam.east) -- (pref.west);
+% Route around the hidden-states box: down into the inter-row gap, then left,
+% then into the top of the PT encoder.
+\draw[arr] (pref.south) -- ++(0,-1.5) -| (pte.north);
+\node[lbl] at (10.4,4.75) {concat with $S_u$};
+
+% ---------------- training losses (y = 0.6) ----------------
+\node[loss, minimum width=3.6cm, minimum height=1.1cm] (lnce) at (6.3,0.6)
+  {$\mathcal L_{nce}$ contrastive\\ two augmented views};
+\node[loss, minimum width=3.6cm, minimum height=1.1cm] (lce) at (10.2,0.6)
+  {$\mathcal L_{ce}$ dense next-item\\ supervision, every position};
+\draw[darr] (pte.south) -- (lnce.north);
+\draw[darr] (hs.south) -- (lce.north);
+
+% ---------------- total objective (bottom left) ----------------
+\node[loss, fill=orange!20, minimum width=5.8cm, minimum height=1.7cm] (ltot)
+  at (3.4,-2.3)
+  {PT training objective\\[2pt]
+   $\mathcal L=\mathcal L_{ce}+\mathcal L_{nce}+\mathcal L_{div}
+    +\gamma_c\,\mathcal L_{consec}$\\[2pt]
+   {\scriptsize $\gamma_c$: training weight;
+    $\lambda,\lambda_c$: inference-time knobs (no retraining)}};
+\draw[darr, dotted] (lnce.west) to[bend left=12] (ltot.north east);
+\draw[darr, dotted] (lce.west)  to[bend left=18] (ltot.east);
+
+% ---------------- step-wise generation (right, y = -2.1) ----------------
+\node[ptb, minimum width=5.0cm, minimum height=2.0cm] (gen) at (12.0,-2.1)
+  {Step-wise top-$k$ list generation\\[2pt]
+   {\footnotesize greedy path: $P_{\mathrm{rel}}(j)$}\\[1pt]
+   {\footnotesize diverse path:
+    $(1-\lambda)P_{\mathrm{rel}}+\lambda P_{\mathrm{cov}}
+     -\lambda_c\,C(\cdot;j_{s-1})$}};
+\draw[arr] (hs.south) -- (gen.north);
+
+% ---------------- generated lists (y = -4.7) ----------------
+\node[lst, minimum width=2.4cm, minimum height=1.1cm] (rg) at (9.9,-4.7)
+  {$R^{greedy}$\\ {\scriptsize relevance only}};
+\node[lst, minimum width=2.6cm, minimum height=1.1cm] (rd) at (13.7,-4.7)
+  {$R^{div}$ top-$k$\\ {\scriptsize inference output}};
+\draw[arr] (gen.south) -- (rg.north);
+\draw[arr] (gen.south) -- (rd.north);
+
+% ---------------- list-level losses (y = -6.4) ----------------
+\node[loss, minimum width=4.6cm, minimum height=1.2cm] (ldiv) at (9.9,-6.4)
+  {$\mathcal L_{div}$ ILD advantage\\
+   $\mathrm{ILD}(R^{div})-\mathrm{ILD}(R^{greedy})$};
+\node[loss, minimum width=2.6cm, minimum height=1.2cm] (lc) at (14.1,-6.4)
+  {$\mathcal L_{consec}$\\ adjacent-item penalty};
+\draw[darr] (rg.south) -- (ldiv.north);
+\draw[darr] (rd.south west) -- (ldiv.north east);
+\draw[darr] (rd.south) -- (lc.north);
+
+% ---------------- stage frames ----------------
+\begin{scope}[on background layer]
+  \node[stage, fit=(rev)(rte)(beam)(pref)] (st1) {};
+  \node[stage, fit=(seq)(fuse)(fusenote)(pte)(hs)(lnce)(lce)(gen)(rg)(rd)(ldiv)(lc)(ltot)] (st2) {};
+\end{scope}
+\node[stagelbl, anchor=south west] at (st1.north west)
+  {Stage 1: Retrospective Greedy Search (RT)};
+\node[stagelbl, anchor=north west] at (st2.south west)
+  {Stage 2: PACER --- content-fused prospective training \& diversity-aware inference};
+
+\end{tikzpicture}%
+}
+\caption{Overall PACER framework. \textbf{Stage 1 (RT):} a reverse-direction
+transformer, trained independently and then frozen, hallucinates items that
+could have preceded the observed sequence and returns beam-search augmented
+views. \textbf{Stage 2 (PACER):} each item is represented by additive fusion of
+ID, category (masked-mean pooled), creator, and music embeddings together with
+a positional embedding; a forward transformer is trained with dense
+per-position next-item supervision ($\mathcal L_{ce}$), cross-view contrastive
+learning ($\mathcal L_{nce}$), an ILD list-diversity loss
+($\mathcal L_{div}$), and an adjacent-item consecutive penalty
+($\mathcal L_{consec}$). At inference, lists are generated step by step with
+the combined relevance--coverage--consecutive score; $\lambda$ and
+$\lambda_c$ are tuned without retraining.}
+\label{fig:pacer_framework}
+\end{figure*}
