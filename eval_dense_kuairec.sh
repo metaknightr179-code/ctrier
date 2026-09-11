@@ -6,6 +6,12 @@
 #   save_pt_typeauthor_fixrt_lamb0005_<variant> (dense, type + author, ONLY lamb=0.005)
 #   save_pt_typemusic_fixrt_lamb0005_<variant>  (dense, type + music,  ONLY lamb=0.005)
 #   save_pt_typedur_fixrt_lamb0005_<variant>    (dense, type + duration bucket, ONLY lamb=0.005)
+#   save_pt_author_fixrt_lamb01_<variant>       (dense, notype + author, ONLY lamb=0.01)
+#   save_pt_music_fixrt_lamb01_<variant>        (dense, notype + music,  ONLY lamb=0.01)
+#   save_pt_authormusic_fixrt_lamb01_<variant>  (dense, notype + author + music, ONLY lamb=0.01)
+#   save_pt_typeauthor_fixrt_lamb01_<variant>   (dense, type + author, ONLY lamb=0.01)
+#   save_pt_typemusic_fixrt_lamb01_<variant>    (dense, type + music,  ONLY lamb=0.01)
+#   save_pt_typeall_fixrt_lamb01_<variant>      (dense, type + author + music, ONLY lamb=0.01)
 #
 # NOTE: -dense is NOT passed at eval: test_forward always gathers the last
 # position; dense only changes the training loss/forward. Checkpoint weights
@@ -69,6 +75,14 @@ DUR_FAMILIES=(
 )
 DUR_EXTRA="-dur_file ./KuaiRec_variants/kuairec_dur.txt -n_dur 8"
 
+# Full 2^3 embedding ablation at the lambda=0.01 operating point (new families).
+AUTHORMUSIC_FAMILIES=(
+    "authormusic|save_pt_authormusic_fixrt_|-no_type"
+)
+TYPEALL_FAMILIES=(
+    "typeall|save_pt_typeall_fixrt_|"
+)
+
 get_latest_epoch() {
     ls "${1}"/duorec-*.pth 2>/dev/null | sed 's/.*duorec-//;s/\.pth//' | sort -n | tail -1
 }
@@ -121,8 +135,9 @@ run_eval () {
     fi
 }
 
-# Two groups: dense sweeps all 9 configs; author families run only lamb0005.
-for GROUP in dense author music dur; do
+# Groups: dense sweeps all 9 configs; author/music run lamb0005 + lamb01;
+# authormusic/typeall run only lamb01; dur keeps its lamb0005 results.
+for GROUP in dense author music dur authormusic typeall; do
   case "$GROUP" in
     dense)
       CFGS=("${CONFIGS[@]}")
@@ -130,19 +145,29 @@ for GROUP in dense author music dur; do
       EXTRA=""
       ;;
     author)
-      CFGS=("lamb0005|0.005|0")
-      FAMS=("${AUTHOR_FAMILIES[@]}")
+      CFGS=("lamb0005|0.005|0" "lamb01|0.01|0")
+      FAMS=("${AUTHOR_FAMILIES[@]}" "author|save_pt_author_fixrt_|-no_type")
       EXTRA="$AUTHOR_EXTRA"
       ;;
     music)
-      CFGS=("lamb0005|0.005|0")
-      FAMS=("${MUSIC_FAMILIES[@]}")
+      CFGS=("lamb0005|0.005|0" "lamb01|0.01|0")
+      FAMS=("${MUSIC_FAMILIES[@]}" "music|save_pt_music_fixrt_|-no_type")
       EXTRA="$MUSIC_EXTRA"
       ;;
     dur)
       CFGS=("lamb0005|0.005|0")
       FAMS=("${DUR_FAMILIES[@]}")
       EXTRA="$DUR_EXTRA"
+      ;;
+    authormusic)
+      CFGS=("lamb01|0.01|0")
+      FAMS=("${AUTHORMUSIC_FAMILIES[@]}")
+      EXTRA="$AUTHOR_EXTRA $MUSIC_EXTRA"
+      ;;
+    typeall)
+      CFGS=("lamb01|0.01|0")
+      FAMS=("${TYPEALL_FAMILIES[@]}")
+      EXTRA="$AUTHOR_EXTRA $MUSIC_EXTRA"
       ;;
   esac
 for FAM in "${FAMS[@]}"; do
@@ -206,4 +231,4 @@ for FAM in "${FAMS[@]}"; do
 done
 done
 
-echo "ALL DENSE KUAIREC EVALS DONE (dense + author/music/dur@lamb0005)"
+echo "ALL DENSE KUAIREC EVALS DONE (dense sweep + side-info ablation @lamb0005/@lamb01)"

@@ -185,6 +185,9 @@ DENSE_DIR_PREFIXES = (
     "save_pt_typemusic_fixrt_",
     "save_pt_typedur_fixrt_",
     "save_pt_author_fixrt_",
+    "save_pt_music_fixrt_",
+    "save_pt_authormusic_fixrt_",
+    "save_pt_typeall_fixrt_",
 )
 
 
@@ -314,8 +317,11 @@ def model_label(row):
         return "GRU-TRIER " + CONFIG_LABELS.get(cfg, cfg)
     fam_prefix = {"trier_type": "TRIER(type) ", "trier_notype": "TRIER(notype) ",
                   "trier_author": "TRIER(author) ",
+                  "trier_music": "TRIER(music) ",
+                  "trier_authormusic": "TRIER(author+music) ",
                   "trier_typeauthor": "TRIER(type+author) ",
                   "trier_typemusic": "TRIER(type+music) ",
+                  "trier_typeall": "TRIER(type+author+music) ",
                   "trier_typedur": "TRIER(type+dur) "}.get(fam, "TRIER(notype) ")
     return fam_prefix + CONFIG_LABELS.get(cfg, cfg)
 

@@ -109,34 +109,40 @@ for FAM in "type|save_pt_dense_|" "notype|save_pt_notype_dense_|-no_type"; do
     done
 done
 
-# ---- PT (side-info families: type + one extra channel, lamb0005 only) ----
+# ---- PT (side-info families) ----
+# Old ablation at lamb0005 (type+one channel) + full 2^3 ablation at lamb01
+# (6 new families from train_pt_sideinfo01_fixrt.sh; duration excluded).
 echo ""
 echo "============================================================"
-echo " PT SIDE-INFO FAMILIES (author/music/dur, target: ${MAX_EPOCHS} epochs or early-stopped)"
+echo " PT SIDE-INFO FAMILIES (target: ${MAX_EPOCHS} epochs or early-stopped)"
 echo "============================================================"
-for FAM in "typeauthor|save_pt_typeauthor_fixrt_" \
-           "typemusic|save_pt_typemusic_fixrt_" \
-           "typedur|save_pt_typedur_fixrt_"; do
-    IFS='|' read -r FAM_NAME DIR_PREFIX FLAG <<< "$FAM"
-    for CFG in "${AUTHOR_CONFIGS[@]}"; do
-        for VAR in "${VARIANTS[@]}"; do
-            DIR="${DIR_PREFIX}${CFG}_${VAR}"
-            LOG="${DIR}/train_result.txt"
-            DONE="${DIR}/DONE"
+for FAM in "typeauthor|save_pt_typeauthor_fixrt_|lamb0005" \
+           "typemusic|save_pt_typemusic_fixrt_|lamb0005" \
+           "typedur|save_pt_typedur_fixrt_|lamb0005" \
+           "author01|save_pt_author_fixrt_|lamb01" \
+           "music01|save_pt_music_fixrt_|lamb01" \
+           "authormusic01|save_pt_authormusic_fixrt_|lamb01" \
+           "typeauthor01|save_pt_typeauthor_fixrt_|lamb01" \
+           "typemusic01|save_pt_typemusic_fixrt_|lamb01" \
+           "typeall01|save_pt_typeall_fixrt_|lamb01"; do
+    IFS='|' read -r FAM_NAME DIR_PREFIX CFG <<< "$FAM"
+    for VAR in "${VARIANTS[@]}"; do
+        DIR="${DIR_PREFIX}${CFG}_${VAR}"
+        LOG="${DIR}/train_result.txt"
+        DONE="${DIR}/DONE"
 
-            if [ -f "$DONE" ]; then
-                echo "  ${FAM_NAME} ${CFG} ${VAR}: DONE"
-            elif [ -f "$LOG" ]; then
-                LINES=$(wc -l < "$LOG" 2>/dev/null); LINES=${LINES:-0}
-                if [ "$LINES" -ge "$MAX_EPOCHS" ]; then
-                    echo "  ${FAM_NAME} ${CFG} ${VAR}: ${MAX_EPOCHS} epochs (complete)"
-                else
-                    echo "  ${FAM_NAME} ${CFG} ${VAR}: partial (${LINES}/${MAX_EPOCHS})"
-                fi
-            elif [ -d "${DIR}/model" ]; then
-                echo "  ${FAM_NAME} ${CFG} ${VAR}: started (no log)"
+        if [ -f "$DONE" ]; then
+            echo "  ${FAM_NAME} ${CFG} ${VAR}: DONE"
+        elif [ -f "$LOG" ]; then
+            LINES=$(wc -l < "$LOG" 2>/dev/null); LINES=${LINES:-0}
+            if [ "$LINES" -ge "$MAX_EPOCHS" ]; then
+                echo "  ${FAM_NAME} ${CFG} ${VAR}: ${MAX_EPOCHS} epochs (complete)"
+            else
+                echo "  ${FAM_NAME} ${CFG} ${VAR}: partial (${LINES}/${MAX_EPOCHS})"
             fi
-        done
+        elif [ -d "${DIR}/model" ]; then
+            echo "  ${FAM_NAME} ${CFG} ${VAR}: started (no log)"
+        fi
     done
 done
 
@@ -174,17 +180,16 @@ for VAR in "${VARIANTS[@]}"; do
 done
 echo "  RT: ${rt_done} done / ${rt_partial} partial / ${rt_not} not started (of 4)"
 
-# PT all families. Dense sweeps all 9 configs (type+notype); the three side
-# families (type+author, type+music, type+dur) run only lamb0005.
-# GROUP: name|num_prefixes (prefix list set inside the loop)
-for LABEL in "dense|2|${#CONFIGS[@]}" "author|1|${#AUTHOR_CONFIGS[@]}" \
-             "music|1|${#AUTHOR_CONFIGS[@]}" "dur|1|${#AUTHOR_CONFIGS[@]}"; do
+# PT all families. Dense sweeps all 9 configs (type+notype). Old side families
+# (type+author/music/dur) at lamb0005; full 2^3 ablation (6 families) at lamb01.
+# GROUP: name|num_prefixes|num_configs (prefix list set inside the loop)
+for LABEL in "dense|2|${#CONFIGS[@]}" "side0005|3|${#AUTHOR_CONFIGS[@]}" \
+             "side01|6|1"; do
     IFS='|' read -r PNAME N_PREFIX N_CFG <<< "$LABEL"
     case "$PNAME" in
-        dense) CFGS=("${CONFIGS[@]}");            PREFIXES=("save_pt_dense_" "save_pt_notype_dense_") ;;
-        author) CFGS=("${AUTHOR_CONFIGS[@]}");    PREFIXES=("save_pt_typeauthor_fixrt_") ;;
-        music) CFGS=("${AUTHOR_CONFIGS[@]}");     PREFIXES=("save_pt_typemusic_fixrt_") ;;
-        dur) CFGS=("${AUTHOR_CONFIGS[@]}");       PREFIXES=("save_pt_typedur_fixrt_") ;;
+        dense) CFGS=("${CONFIGS[@]}");          PREFIXES=("save_pt_dense_" "save_pt_notype_dense_") ;;
+        side0005) CFGS=("${AUTHOR_CONFIGS[@]}"); PREFIXES=("save_pt_typeauthor_fixrt_" "save_pt_typemusic_fixrt_" "save_pt_typedur_fixrt_") ;;
+        side01) CFGS=("lamb01");                 PREFIXES=("save_pt_author_fixrt_" "save_pt_music_fixrt_" "save_pt_authormusic_fixrt_" "save_pt_typeauthor_fixrt_" "save_pt_typemusic_fixrt_" "save_pt_typeall_fixrt_") ;;
     esac
     pt_done=0; pt_partial=0; pt_not=0
     for DIR_PREFIX in "${PREFIXES[@]}"; do
