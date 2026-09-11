@@ -1,36 +1,51 @@
 \subsection{Implementation Details}
 
-\subsubsection{Dataset}
-We conducted experiments on the Kuairec dataset~\cite{kuairec}, a large-scale real-world video recommendation dataset. The dataset contains 10,728 unique items across 31 semantic categories. Following standard sequential recommendation protocols, we constructed four dataset variants based on different item selection strategies for the training/validation/test split: \emph{highest\_individual}, \emph{highest\_average}, \emph{first\_individual}, and \emph{first\_average}. For each variant, we adopted the leave-one-out evaluation protocol~\cite{cao2018,sun2018,vaswani2017}: the last item in each user's interaction sequence was designated as the test item, the second-to-last item for validation, and the remaining items for training. All sequences were truncated to a maximum length of 50 items.
+\subsubsection{Datasets}
+\label{sec:datasets}
+We conduct experiments on four real-world datasets spanning the short-video and movie domains; their statistics after preprocessing are summarized in Table~\ref{tab:dataset_stats}.
+
+\begin{table*}[t]
+\centering
+\small
+\caption{Statistics of the datasets after preprocessing. Categories are video categories, movie genres, or content tags depending on the dataset.}
+\label{tab:dataset_stats}
+\begin{tabular}{lccccc}
+\toprule
+Dataset & Users & Items & Categories & Interactions & Avg.\ interactions/user \\
+\midrule
+KuaiRec     & 7,176 & 10,728 & 31 & $\approx$9.57M & 1,334 \\
+ML1M        & 6,034 & 3,125  & 18 & 574,376        & 95.2 \\
+MicroLens   & 5,670 & 26,922 & 57 & 86,664         & 15.3 \\
+KuaiRand-1K & 995   & 20,000 & 44 & 547,659        & 550.4 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{itemize}
+    \item \textbf{KuaiRec}~\cite{kuairec} is a fully observed real-world short-video recommendation dataset with dense engagement logs; each video is annotated with one of 31 semantic categories. Following the engagement aggregation protocol of~\cite{kuairec}, we construct four variants\footnote{The user and item counts are identical across the four variants; the interaction count shown is for the \emph{individual} variants ($\approx$9.55M for the \emph{average} variants).} according to whether positive engagement is determined by the \emph{individual} viewing ratio or the video-\emph{average} viewing ratio, and whether the \emph{first} or \emph{highest} engagement of each user--item pair is retained: \emph{highest\_individual}, \emph{highest\_average}, \emph{first\_individual}, and \emph{first\_average}.
+    \item \textbf{MovieLens-1M (ML1M)}~\cite{harper2015} is a classic movie rating dataset. We treat ratings of at least 4 stars as positive feedback and apply iterative 5-core filtering on users and items. Movies are described by 18 multi-label genres that serve as categories.
+    \item \textbf{MicroLens}~\cite{ni2023microlens} is a content-driven micro-video recommendation dataset with rich per-video category metadata. We retain interactions whose watch-time-to-duration ratio is at least 0.1 and deduplicate user--video pairs, keeping the highest-ratio engagement. Videos are organized into 57 content categories.
+    \item \textbf{KuaiRand-1K}~\cite{gao2022kuairand} is an unbiased short-video recommendation log collected under randomized exposure. We keep only fully watched (\emph{long-view}) interactions, deduplicate user--video pairs, retain the 20,000 most popular videos, and apply iterative 5-core filtering. Videos carry 44 content tags.
+\end{itemize}
+
+For all datasets, items are re-indexed to $1,\ldots,|\mathcal{I}|$ with $0$ reserved for padding, and interactions are grouped by user and sorted chronologically into sequences. We adopt the leave-one-out protocol: the last item is the test item, the second-to-last the validation item, and the rest form training. All sequences are truncated to a maximum length of 50.
 
 \subsubsection{Evaluation Protocol}
-To ensure consistent and unbiased comparison, we evaluated all models on the \emph{entire item set} without sampled ranking. This full-ranking evaluation avoids the inconsistencies introduced by sampled metrics~\cite{chen2021}. We report performance metrics at $k \in \{5, 10, 20\}$: Recall@$k$, NDCG@$k$, MRR@$k$, Inverse List Diversity (ILD)~\cite{zhang2022}, Consecutive Similarity (CS), and Category Coverage (CC)~\cite{zhou2018}. ILD is computed using raw Euclidean distances between L2-normalized item embeddings following the standard formulation~\cite{zhang2022}. CC measures the fraction of item categories covered by the top-$k$ recommendation list. CS quantifies the average cosine similarity between adjacent items in the generated sequence.
+We evaluate all models by ranking the held-out item against the \emph{entire item set} without sampled negatives, avoiding the inconsistencies of sampled metrics~\cite{chen2021}. We report accuracy metrics Recall@$k$ (Hit Ratio), NDCG@$k$, and MRR@$k$; diversity metrics Intra-List Distance (ILD@$k$)~\cite{zhang2022} and Category Coverage (CC@$k$)~\cite{zhou2018}; and the Consecutive Similarity (CS@$k$) of adjacent list items, for $k\in\{5,10,20\}$. ILD is the average pairwise Euclidean distance between L2-normalized item vectors, CC the fraction of categories covered by the list, and CS the average cosine similarity between items at consecutive positions (lower CS means locally less repetitive lists). Crucially, ILD and CS are measured for \emph{all} models in the same frozen, pretrained content-embedding space (the dataset-specific category/item2vec vectors released with the data), so cross-model diversity numbers are directly comparable.
 
-\subsubsection{TRIER Configuration}
-The TRIER model consists of two components: the Reverse Trajectory (RT) model and the Forward Recommendation (PT) model. Both components share the same transformer-based architecture built with PyTorch. We initialized all parameters using Xavier uniform initialization. The embedding size and hidden dimensions were set to 64. The transformer encoder comprised 2 layers with 2 attention heads. A dropout rate of 0.5 was applied to both the embedding matrix and the transformer module for regularization.
+\subsubsection{Model Configuration}
+Both the RT and PT encoders use $d=64$ hidden units, 2 transformer layers, and 2 attention heads, with dropout 0.5 on embeddings and transformer sub-layers; parameters are initialized from $\mathcal{N}(0,0.02^2)$. We use Adam~\cite{kingma2015} with learning rate $10^{-3}$ and batch size 256, train for at most 1{,}000 epochs with early stopping on validation performance (patience 100, minimum improvement $10^{-4}$). The RT model is trained first to convergence and frozen when training PT. We set $K=5$ retrospectively generated items, beam width $M=3$, the diversity trade-off $\lambda=0.1$, and the consecutive-penalty weight $\lambda_c=0.01$; $\lambda$ and $\lambda_c$ can be adjusted at inference without retraining. All baselines share the same split, full-catalog protocol, Adam ($10^{-3}$, batch 256, max length 50), and early-stopping schedule (500 epochs, patience 100); their architecture hyperparameters follow the respective original papers and are selected on the validation set.
 
-For optimization, we used the Adam optimizer~\cite{kingma2015} with a learning rate of $5 \times 10^{-4}$ and batch size of 16. Models were trained for up to 500 epochs with early stopping on the validation set (patience of 50 epochs, minimum improvement of $1 \times 10^{-4}$). The RT model was trained first to convergence, and the trained RT checkpoint was then used to initialize the PT model's left-side augmentation module.
-
-The diversity weight $\lambda$ controlling the trade-off between relevance and diversity was set to 0.1 following~\cite{zhang2022}. The consecutive similarity loss weight was set to 0.01 to prevent coverage collapse. The number of augmented items (beam width, $M$) was set to 3, and the number of left-side augmented items ($K$) was set to 5. We also trained an additional PT model variant without the consecutive similarity loss (denoted as PT-no-consec) to isolate the effect of each diversity component.
-
-\subsubsection{Baseline Configuration}
-We implemented three strong sequential recommendation baselines using PyTorch for fair comparison:
+\subsubsection{Baselines}
+We compare with representative sequential recommendation methods, grouped into (i) vanilla sequential recommenders, (ii) self-supervised sequential recommenders, and (iii) diversified sequential recommenders.
 
 \begin{itemize}
-    \item \textbf{GRU4Rec}~\cite{hidasi2016}: A recurrent neural network-based sequential recommender using GRU cells. We set the embedding dimension to 100, hidden dimension to 100, and trained for 500 epochs with batch size 64 and learning rate $1 \times 10^{-3}$.
-    
-    \item \textbf{SASRec}~\cite{kang2018}: Self-Attentive Sequential Recommendation using a causal transformer. We set the hidden size to 50, number of transformer layers to 2, number of attention heads to 1, dropout rate to 0.5, and trained for 500 epochs with batch size 64 and learning rate $1 \times 10^{-3}$.
-    
-    \item \textbf{BERT4Rec}~\cite{sun2019}: Bidirectional encoder representations from transformers for sequential recommendation using masked language modeling. We set the hidden size to 64, number of transformer layers to 2, number of attention heads to 2, dropout rate to 0.2, mask probability to 0.2, and trained for 500 epochs with batch size 64 and learning rate $1 \times 10^{-3}$.
+    \item \textbf{GRU4Rec}~\cite{hidasi2016}: A GRU-based recurrent recommender that models user sequences with gated recurrent units.
+    \item \textbf{SASRec}~\cite{kang2018}: A causal self-attentive sequential recommender that captures sequential patterns with a unidirectional transformer.
+    \item \textbf{BERT4Rec}~\cite{sun2019}: A bidirectional transformer trained with masked item prediction for contextual sequence modeling.
+    \item \textbf{DuoRec}~\cite{wang2022duorec}: A self-supervised transformer combining dropout-based model-level augmentation with supervised positive-pair contrastive regularization; it is also the backbone architecture of the PT module.
+    \item \textbf{TRIER}~\cite{shi2024trier}: The diversified sequential recommender most directly related to PACER and its foundation. A retrospective transformer reverse-predicts plausible historical interactions and produces $M$ augmented sequences via beam search, after which a prospective transformer generates lists that cover the reconstructed intents with an intent-coverage diversity loss. We run the official implementation under our unified split and full-ranking protocol, using plain item-ID embeddings and no content fusion, dense supervision, or position-aware consecutive penalty, so any gain of PACER isolates the contribution of our extensions.
 \end{itemize}
 
-All baselines were trained using the Adam optimizer with early stopping (patience of 50 epochs) and evaluated on the same test set using the full-ranking protocol described above. For diversity metrics (ILD, CS, CC), the baseline models' own item embedding weights were used as the item representation space, consistent with the TRIER evaluation protocol.
-
-\subsubsection{Ablation Studies}
-To disentangle the contributions of individual components, we conducted the following ablation experiments:
-\begin{itemize}
-    \item \textbf{PT without consecutive diversity loss}: Training the PT model with only the overall diversity loss enabled ($\lambda = 0.1$) and the consecutive similarity loss disabled. This variant tests whether the consecutive similarity constraint is necessary for maintaining recommendation quality while promoting diversity.
-    \item \textbf{PT with full diversity loss}: Training the PT model with both overall diversity loss ($\lambda = 0.1$) and consecutive similarity loss (weight $= 0.01$) enabled.
-    \item \textbf{RT model only}: Evaluating the RT model independently without the PT component, to assess the standalone quality of reverse trajectory modeling for next-item prediction.
-\end{itemize}
-\endparameter></function></seed:tool_call>
+\subsubsection{Ablation Variants}
+To disentangle the contributions of PACER's components, we additionally report: (i)~\textbf{PT-no-consec}, which keeps the intent-coverage loss ($\lambda=0.1$) but disables the consecutive-similarity penalty ($\lambda_c=0$), testing whether local position-aware smoothing is needed on top of global intent coverage; (ii)~\textbf{PACER-full}, with both losses enabled at $\lambda=0.1$, $\lambda_c=0.01$; and (iii)~\textbf{RT-only}, the retrospective model evaluated alone for next-item prediction, assessing the standalone value of reverse trajectory modeling.
