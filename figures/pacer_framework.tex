@@ -16,7 +16,19 @@
 % =============================================================================
 \usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
 
-\begin{figure*}[t]
+% Float placement notes (two-column):
+%  - [t!] overrides LaTeX's aesthetic limits so the spanning float can take
+%    the top of the *next* page even when tall.
+%  - Preamble (main .tex), recommended:
+%      \usepackage{dblfloatfix}                 % allow current-page placement
+%      \usepackage{placeins}                    % \FloatBarrier support
+%      \renewcommand{\dbltopfraction}{0.95}
+%      \renewcommand{\dblfloatpagefraction}{0.7}
+%  - To stop it drifting past a section, put \FloatBarrier where it must be
+%    printed by (e.g. right before the next \subsection).
+%  - Exact "on this page, right here" needs a non-float: use the strip
+%    environment of the cuted package instead of figure*.
+\begin{figure*}[t!]
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
