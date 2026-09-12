@@ -12,7 +12,9 @@
 #   typemusic         (type + music)     -> save_pt_typemusic_fixrt_lamb01_<variant>
 #   typeall           (type + both)      -> save_pt_typeall_fixrt_lamb01_<variant>
 #
-# Only the 6 marked families are trained here: 6 x 4 variants = 24 runs.
+# Only the 6 marked families are trained here. Restricted to the single
+# strongest variant (kuairec_first_average: best NDCG@20 for both TRIER
+# and PACER under the NDCG@20 selection rule) -> 6 runs.
 # Duration is deliberately excluded (performed poorly in earlier ablation).
 #
 # Shared RT checkpoints: save_rt_fix_<variant> (RT has no side-info layers).
@@ -28,9 +30,6 @@ GPU=${1:-0}
 MAX_EPOCHS=1000
 
 VARIANTS=(
-    kuairec_highest_individual
-    kuairec_highest_average
-    kuairec_first_individual
     kuairec_first_average
 )
 
