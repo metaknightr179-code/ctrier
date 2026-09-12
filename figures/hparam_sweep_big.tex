@@ -1,0 +1,92 @@
+\begin{figure*}[t]
+\centering
+% Requires preamble: \usepackage{pgfplots}, \usepgfplotslibrary{groupplots}, \usetikzlibrary{calc}
+\pgfplotsset{compat=1.17}
+\begin{tikzpicture}[font=\scriptsize]
+\tikzset{
+  TRIERsty/.style={blue!72!black,mark=triangle*,mark size=2.2pt},
+  PACERsty/.style={red!72!black,mark=square*,mark size=2.0pt},
+  CONSsty/.style={only marks,mark=x,mark size=4.5pt,line width=0.9pt,opacity=0.85},
+}
+\begin{groupplot}[
+  group style={group size=3 by 4,horizontal sep=0.5cm,vertical sep=0.85cm},
+  every axis plot/.append style={line width=1.1pt},
+  width=4.55cm,height=3.25cm,
+  xtick={0,1,2,3,4,5},xticklabels={No-Div,0.002,0.005,0.01,0.05,0.1},
+  scaled ticks=false,/pgf/number format/fixed,/pgf/number format/precision=4,
+  tick label style={font=\scriptsize},
+  label style={font=\scriptsize},
+  title style={font=\scriptsize\bfseries,align=center},
+  grid=both,grid style={line width=.1pt,draw=gray!20},
+  major tick length=0pt,
+]
+\nextgroupplot[title={MicroLens},ylabel={HR@20},xticklabels={},legend to name=legbig,legend columns=3,legend cell align=left,legend style={font=\scriptsize,draw=gray!40},]
+\addplot[TRIERsty] coordinates {(0,0.0120) (1,0.0118) (2,0.0127) (3,0.0127) (4,0.0115) (5,0.0115)};
+  \addlegendentry{TRIER$_{-t}$}
+\addplot[PACERsty] coordinates {(0,0.0141) (1,0.0127) (2,0.0120) (3,0.0118) (4,0.0132) (5,0.0122)};
+  \addlegendentry{PACER}
+\addplot[blue!60!black,CONSsty,forget plot] coordinates { (1.84,0.0127) };
+\addplot[red!65!black,CONSsty,forget plot] coordinates { (2.16,0.0120) };
+  \addlegendimage{CONSsty,black!70}
+  \addlegendentry{$\lambda{=}0.005{+}$consec.}
+\nextgroupplot[title={ML-1M},xticklabels={}]
+\addplot[TRIERsty] coordinates {(0,0.2754) (1,0.2731) (2,0.2753) (3,0.2736) (4,0.2556) (5,0.2479)};
+\addplot[PACERsty] coordinates {(0,0.2766) (1,0.2776) (2,0.2816) (3,0.2754) (4,0.2630) (5,0.2531)};
+\addplot[blue!60!black,CONSsty,forget plot] coordinates { (1.84,0.2753) };
+\addplot[red!65!black,CONSsty,forget plot] coordinates { (2.16,0.2816) };
+\nextgroupplot[title={KuaiRand},xticklabels={}]
+\addplot[TRIERsty] coordinates {(0,0.0623) (1,0.0503) (2,0.0492) (3,0.0523) (4,0.0412) (5,0.0402)};
+\addplot[PACERsty] coordinates {(0,0.0603) (1,0.0583) (2,0.0623) (3,0.0563) (4,0.0553) (5,0.0452)};
+\addplot[blue!60!black,CONSsty,forget plot] coordinates { (1.84,0.0492) };
+\addplot[red!65!black,CONSsty,forget plot] coordinates { (2.16,0.0623) };
+\nextgroupplot[ylabel={NDCG@20},xticklabels={}]
+\addplot[TRIERsty] coordinates {(0,0.0042) (1,0.0040) (2,0.0043) (3,0.0042) (4,0.0039) (5,0.0040)};
+\addplot[PACERsty] coordinates {(0,0.0048) (1,0.0042) (2,0.0040) (3,0.0041) (4,0.0043) (5,0.0042)};
+\addplot[blue!60!black,CONSsty,forget plot] coordinates { (1.84,0.0043) };
+\addplot[red!65!black,CONSsty,forget plot] coordinates { (2.16,0.0040) };
+\nextgroupplot[xticklabels={}]
+\addplot[TRIERsty] coordinates {(0,0.1112) (1,0.1107) (2,0.1116) (3,0.1104) (4,0.1036) (5,0.0998)};
+\addplot[PACERsty] coordinates {(0,0.1124) (1,0.1124) (2,0.1137) (3,0.1115) (4,0.1066) (5,0.1023)};
+\addplot[blue!60!black,CONSsty,forget plot] coordinates { (1.84,0.1116) };
+\addplot[red!65!black,CONSsty,forget plot] coordinates { (2.16,0.1137) };
+\nextgroupplot[xticklabels={}]
+\addplot[TRIERsty] coordinates {(0,0.0207) (1,0.0169) (2,0.0164) (3,0.0169) (4,0.0125) (5,0.0121)};
+\addplot[PACERsty] coordinates {(0,0.0203) (1,0.0209) (2,0.0215) (3,0.0192) (4,0.0167) (5,0.0144)};
+\addplot[blue!60!black,CONSsty,forget plot] coordinates { (1.84,0.0164) };
+\addplot[red!65!black,CONSsty,forget plot] coordinates { (2.16,0.0215) };
+\nextgroupplot[ylabel={ILD@20},xticklabels={}]
+\addplot[TRIERsty] coordinates {(0,1.3002) (1,1.2977) (2,1.2970) (3,1.2996) (4,1.3009) (5,1.3012)};
+\addplot[PACERsty] coordinates {(0,1.2925) (1,1.2918) (2,1.2931) (3,1.2918) (4,1.2953) (5,1.2959)};
+\addplot[blue!60!black,CONSsty,forget plot] coordinates { (1.84,1.2970) };
+\addplot[red!65!black,CONSsty,forget plot] coordinates { (2.16,1.2931) };
+\nextgroupplot[xticklabels={}]
+\addplot[TRIERsty] coordinates {(0,1.2759) (1,1.2766) (2,1.3170) (3,1.3242) (4,1.4628) (5,1.4751)};
+\addplot[PACERsty] coordinates {(0,1.2653) (1,1.2663) (2,1.2829) (3,1.3176) (4,1.4527) (5,1.4581)};
+\addplot[blue!60!black,CONSsty,forget plot] coordinates { (1.84,1.3170) };
+\addplot[red!65!black,CONSsty,forget plot] coordinates { (2.16,1.2829) };
+\nextgroupplot[xticklabels={}]
+\addplot[TRIERsty] coordinates {(0,1.0592) (1,1.1396) (2,1.1492) (3,1.1691) (4,1.3105) (5,1.3419)};
+\addplot[PACERsty] coordinates {(0,0.9836) (1,1.0828) (2,1.1095) (3,1.1597) (4,1.2831) (5,1.3224)};
+\addplot[blue!60!black,CONSsty,forget plot] coordinates { (1.84,1.1492) };
+\addplot[red!65!black,CONSsty,forget plot] coordinates { (2.16,1.1095) };
+\nextgroupplot[ylabel={CS@20 (lower$=$better)},xticklabel style={rotate=55,anchor=east,font=\tiny}]
+\addplot[TRIERsty] coordinates {(0,0.0806) (1,0.0836) (2,0.0843) (3,0.0824) (4,0.0804) (5,0.0802)};
+\addplot[PACERsty] coordinates {(0,0.0854) (1,0.0869) (2,0.0867) (3,0.0872) (4,0.0862) (5,0.0851)};
+\addplot[blue!60!black,CONSsty,forget plot] coordinates { (1.84,0.0843) };
+\addplot[red!65!black,CONSsty,forget plot] coordinates { (2.16,0.0867) };
+\nextgroupplot[xticklabel style={rotate=55,anchor=east,font=\tiny},xlabel={$\lambda$ (step-wise greedy)}]
+\addplot[TRIERsty] coordinates {(0,0.5361) (1,0.5359) (2,0.5197) (3,0.5162) (4,0.4682) (5,0.4738)};
+\addplot[PACERsty] coordinates {(0,0.5434) (1,0.5406) (2,0.5360) (3,0.5215) (4,0.4717) (5,0.4811)};
+\addplot[blue!60!black,CONSsty,forget plot] coordinates { (1.84,0.5197) };
+\addplot[red!65!black,CONSsty,forget plot] coordinates { (2.16,0.5360) };
+\nextgroupplot[xticklabel style={rotate=55,anchor=east,font=\tiny}]
+\addplot[TRIERsty] coordinates {(0,0.2800) (1,0.2375) (2,0.2314) (3,0.2224) (4,0.1780) (5,0.1404)};
+\addplot[PACERsty] coordinates {(0,0.3322) (1,0.2816) (2,0.2676) (3,0.2281) (4,0.2082) (5,0.1888)};
+\addplot[blue!60!black,CONSsty,forget plot] coordinates { (1.84,0.2314) };
+\addplot[red!65!black,CONSsty,forget plot] coordinates { (2.16,0.2676) };
+\end{groupplot}
+\node[anchor=north] at ($(group c2r4.south)+(0,-1.35)$) {\ref{legbig}};
+\end{tikzpicture}
+\caption{Sensitivity to the diversity penalty $\lambda$ (full-catalog ranking) for TRIER$_{-t}$ (blue triangles) and content-enriched PACER (red squares) under step-wise greedy decoding. Columns: MicroLens, ML-1M, KuaiRand; rows: HR@20, NDCG@20, ILD@20, and CS@20 (lower is better). Cross markers at $\lambda{=}0.005$ show the additional consecutive-category penalty variant.}
+\label{fig:hparam_big}
+\end{figure*}
