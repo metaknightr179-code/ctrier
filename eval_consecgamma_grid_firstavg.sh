@@ -1,21 +1,21 @@
 #!/bin/bash
 # =============================================================================
-# gamma_consec GRID EVAL — kuairec_first_average, dense, fixed lambda=0.005.
+# gamma_consec GRID EVAL — kuairec_first_average, dense, fixed lambda = 0.01.
 # Runs AFTER train_consecgamma_grid_firstavg.sh.
 #
 # Every grid point is a separately TRAINED checkpoint (the loss weight
 # gamma_consec shapes the diverse-token learning signal). All are decoded with
-# the SAME step-wise greedy flags: -div -lamb 0.005, score penalty OFF
+# the SAME step-wise greedy flags: -div -lamb 0.01, score penalty OFF
 # (-lmd_consec defaults to 0). gamma_consec is a training-only weight and is
 # passed as 0 at eval (inert; matches the existing dense-sweep evals).
 #
 #   gamma   checkpoint
-#   0       save_pt_{notype_}dense_lamb0005_consec0_<variant>     (new)
-#   0.001   save_pt_{notype_}dense_lamb0005_consec0001_<variant>
-#   0.005   save_pt_{notype_}dense_lamb0005_consec0005_<variant>  (new)
-#   0.01    plain save_pt_{notype_}dense_lamb0005_<variant>
-#   0.05    save_pt_{notype_}dense_lamb0005_consec005_<variant>
-#   0.1     save_pt_{notype_}dense_lamb0005_consec01_<variant>
+#   0       save_pt_{notype_}dense_lamb001_consec0_<variant>     (new)
+#   0.001   save_pt_{notype_}dense_lamb001_consec0001_<variant>  (new)
+#   0.005   save_pt_{notype_}dense_lamb001_consec0005_<variant>  (new)
+#   0.01    plain save_pt_{notype_}dense_lamb001_<variant>
+#   0.05    save_pt_{notype_}dense_lamb001_consec005_<variant>   (new)
+#   0.1     save_pt_{notype_}dense_lamb001_consec01_<variant>    (new)
 #
 # Results: test_result_gridgamma{,_small}.txt inside each checkpoint dir.
 # The 0.01 point reuses the canonical dense-sweep files when present.
@@ -29,7 +29,7 @@ set -u
 
 GPU=${CUDA_VISIBLE_DEVICES:-0}
 VAR=${CG_VAR:-kuairec_first_average}
-LAMB=0.005
+LAMB=0.01
 
 VAR_DIR="./KuaiRec_variants/${VAR}"
 SMALL_DIR="./KuaiRec_small_eval/${VAR}"
@@ -43,14 +43,14 @@ FAMILIES=(
     "notype|save_pt_notype_dense_|-no_type"
 )
 
-# TAG|gamma|DIR_SUFFIX (plain lamb0005 is the gamma=0.01 default-weight model)
+# TAG|gamma|DIR_SUFFIX (plain lamb001 is the gamma=0.01 default-weight model)
 CONFIGS=(
-    "c0|0|lamb0005_consec0"
-    "c0001|0.001|lamb0005_consec0001"
-    "c0005|0.005|lamb0005_consec0005"
-    "c001|0.01|lamb0005"
-    "c005|0.05|lamb0005_consec005"
-    "c01|0.1|lamb0005_consec01"
+    "c0|0|lamb001_consec0"
+    "c0001|0.001|lamb001_consec0001"
+    "c0005|0.005|lamb001_consec0005"
+    "c001|0.01|lamb001"
+    "c005|0.05|lamb001_consec005"
+    "c01|0.1|lamb001_consec01"
 )
 
 get_latest_epoch() {
@@ -106,7 +106,7 @@ for FAM in "${FAMILIES[@]}"; do
         LATEST=$(get_latest_epoch "${PT_DIR}/model")
         [ -z "$LATEST" ] && { echo "SKIP [${FAM_NAME}/${TAG}]: no checkpoint in ${PT_DIR}"; continue; }
 
-        # gamma=0.01 = plain lamb0005: reuse canonical dense-sweep greedy results
+        # gamma=0.01 = plain lamb001: reuse canonical dense-sweep greedy results
         OUT_BIG="${PT_DIR}/test_result_gridgamma.txt"
         if [ "$TAG" = "c001" ] && [ -s "${PT_DIR}/test_result.txt" ] && [ ! -s "$OUT_BIG" ]; then
             cp "${PT_DIR}/test_result.txt" "$OUT_BIG"
@@ -138,12 +138,12 @@ import ast, os
 
 var = os.environ.get("CG_VAR", "kuairec_first_average")
 families = [("type", "save_pt_dense_"), ("notype", "save_pt_notype_dense_")]
-grid = [("0", "lamb0005_consec0"),
-        ("0.001", "lamb0005_consec0001"),
-        ("0.005", "lamb0005_consec0005"),
-        ("0.01", "lamb0005"),
-        ("0.05", "lamb0005_consec005"),
-        ("0.1", "lamb0005_consec01")]
+grid = [("0", "lamb001_consec0"),
+        ("0.001", "lamb001_consec0001"),
+        ("0.005", "lamb001_consec0005"),
+        ("0.01", "lamb001"),
+        ("0.05", "lamb001_consec005"),
+        ("0.1", "lamb001_consec01")]
 keys = ["recall@5_f", "recall@10_f", "recall@20_f",
         "ndcg@5_f", "ndcg@10_f", "ndcg@20_f",
         "ild@20_f", "cc@20_f", "cs@20_f"]

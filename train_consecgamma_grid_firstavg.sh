@@ -1,30 +1,28 @@
 #!/bin/bash
 # =============================================================================
 # gamma_consec TRAINING-LOSS-WEIGHT GRID — kuairec_first_average, dense,
-# fixed lambda=0.005.
+# fixed lambda = 0.01 (the NDCG@20-selected operating point on First-Average
+# for BOTH families: TRIER_-t 0.1063 and PACER 0.1136, vs a local dip at
+# lambda=0.005; see figures/hparam_sweep_small.tex).
 #
 # NAMING HISTORY (important):
 #   Before 2026-09-11 the loss weight was the flag -lmd_consec (default .01);
 #   commit a3225a7 RENAMED it to -gamma_consec and gave -lmd_consec to a NEW
-#   inference/score-time cosine penalty. The pre-existing checkpoints
-#     save_pt_{notype_}dense_lamb0005_consec0001_<variant>  (gamma = 0.001)
-#     save_pt_{notype_}dense_lamb0005_consec005_<variant>   (gamma = 0.05)
-#     save_pt_{notype_}dense_lamb0005_consec01_<variant>    (gamma = 0.1)
-#   were trained Sep 7-9 with the OLD flag, i.e. they ARE the gamma grid
-#   points — do NOT delete or move them.
+#   inference/score-time cosine penalty. The old lamb0005_consec* checkpoints
+#   therefore sit at lambda=0.005 and are NOT reusable for this grid.
 #
-# Grid gamma_consec in {0, 0.001, 0.005, 0.01, 0.05, 0.1}:
-#   0     -> save_pt_{notype_}dense_lamb0005_consec0_<variant>     (NEW)
-#   0.001 -> save_pt_{notype_}dense_lamb0005_consec0001_<variant>  (exists)
-#   0.005 -> save_pt_{notype_}dense_lamb0005_consec0005_<variant>  (NEW)
-#   0.01  -> plain save_pt_{notype_}dense_lamb0005_<variant>       (exists;
+# Grid gamma_consec in {0, 0.001, 0.005, 0.01, 0.05, 0.1} at lambda=0.01:
+#   0     -> save_pt_{notype_}dense_lamb001_consec0_<variant>     (NEW)
+#   0.001 -> save_pt_{notype_}dense_lamb001_consec0001_<variant>  (NEW)
+#   0.005 -> save_pt_{notype_}dense_lamb001_consec0005_<variant>  (NEW)
+#   0.01  -> plain save_pt_{notype_}dense_lamb001_<variant>       (exists;
 #            trained with the default gamma_consec = 0.01)
-#   0.05  -> save_pt_{notype_}dense_lamb0005_consec005_<variant>   (exists)
-#   0.1   -> save_pt_{notype_}dense_lamb0005_consec01_<variant>    (exists)
+#   0.05  -> save_pt_{notype_}dense_lamb001_consec005_<variant>   (NEW)
+#   0.1   -> save_pt_{notype_}dense_lamb001_consec01_<variant>    (NEW)
 #
-# This script trains ONLY the two missing points (0 and 0.005), type + notype,
-# i.e. 4 runs. Everything else is fixed: dense CE, t_mode topk, b=256,
-# lr=1e-3, 1000 epochs, patience 100, frozen RT. The new SCORE penalty
+# This script trains the FIVE missing points, type + notype = 10 runs.
+# Everything else is fixed: dense CE, t_mode topk, b=256, lr=1e-3,
+# 1000 epochs, patience 100, frozen RT. The new SCORE penalty
 # (-lmd_consec) is left at its default 0 — it is not part of this sweep.
 #
 # Usage:
@@ -43,15 +41,18 @@ FAMILIES=(
     "notype|notype_|-no_type"
 )
 
-# SUFFIX|gamma_consec
+# SUFFIX|gamma_consec  (0.01 needs no training: plain lamb001 dir)
 CONFIGS=(
     "consec0|0"
+    "consec0001|0.001"
     "consec0005|0.005"
+    "consec005|0.05"
+    "consec01|0.1"
 )
 
 echo "############################################################"
-echo "# gamma_consec loss-weight grid (fixed lambda=0.005), GPU ${GPU}"
-echo "# variants: ${VARIANTS[*]}; training missing points: 0, 0.005"
+echo "# gamma_consec loss-weight grid at lambda=0.01, GPU ${GPU}"
+echo "# variants: ${VARIANTS[*]}; training 5 missing points x 2 families"
 echo "############################################################"
 
 for VAR in "${VARIANTS[@]}"; do
@@ -78,12 +79,12 @@ for FAM in "${FAMILIES[@]}"; do
   for CFG in "${CONFIGS[@]}"; do
     IFS='|' read -r SUFFIX GAMMA <<< "$CFG"
     for VAR in "${VARIANTS[@]}"; do
-        pt_dir="save_pt_${DIR_MID}dense_lamb0005_${SUFFIX}_${VAR}"
-        pt_log="pt_dense_lamb0005_${SUFFIX}_${FAM_NAME}_${VAR}.log"
+        pt_dir="save_pt_${DIR_MID}dense_lamb001_${SUFFIX}_${VAR}"
+        pt_log="pt_dense_lamb001_${SUFFIX}_${FAM_NAME}_${VAR}.log"
         rt_dir="save_rt_fix_${VAR}"
 
         echo "============================================================"
-        echo "PT Dense [${FAM_NAME}]: lamb0005_${SUFFIX} (gamma_consec=${GAMMA}) / ${VAR}"
+        echo "PT Dense [${FAM_NAME}]: lamb001_${SUFFIX} (gamma_consec=${GAMMA}) / ${VAR}"
         echo "-> ${pt_dir}"
         echo "============================================================"
 
@@ -123,7 +124,7 @@ for FAM in "${FAMILIES[@]}"; do
             -m train -e ${MAX_EPOCHS} -b 256 -l 1e-3 \
             -dense -t_mode topk -early_stop -patience 100 -min_delta 0.0001 \
             ${RESUME} ${TYPE_FLAG} \
-            -div -lamb 0.005 -gamma_consec ${GAMMA} \
+            -div -lamb 0.01 -gamma_consec ${GAMMA} \
             -i ./${rt_dir} -o ./${pt_dir} 2>&1 | tee "${pt_log}"
     done
   done
