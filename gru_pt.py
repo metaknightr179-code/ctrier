@@ -249,7 +249,8 @@ class GRU_PT(nn.Module):
     # ------------------------------------------------------------------
     def calculate_score(self, rel_score, output_token, F, attention_weght):
         lamb = self.args.lamb
-        P_va = (torch.matmul(F, self.combined_item_weight().T) * 10).softmax(-1)
+        tau_o = float(getattr(self.args, 'tau_o', 0.1) or 0.1)
+        P_va = (torch.matmul(F, self.combined_item_weight().T) * (1.0 / tau_o)).softmax(-1)
         P_a_u = attention_weght + 1e-24
 
         output_token = torch.stack(output_token, dim=1)

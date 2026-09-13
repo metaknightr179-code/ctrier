@@ -80,10 +80,10 @@ Beam search in the RT stage returns $M$ augmented views $S_u^{a} = (r^a_K, \ldot
 \begin{equation}
 \label{eq:pva}
 P_a(j)
- = \frac{\exp(10\,\mathbf{f}_a^\top \mathbf{w}_j)}
-        {\sum_{j' \in \mathcal{I}} \exp(10\,\mathbf{f}_a^\top \mathbf{w}_{j'})},
+ = \frac{\exp(\mathbf{f}_a^\top \mathbf{w}_j / \tau_o)}
+        {\sum_{j' \in \mathcal{I}} \exp(\mathbf{f}_a^\top \mathbf{w}_{j'} / \tau_o)},
 \end{equation}
-where the multiplier $10$ (temperature $0.1$) concentrates each intent on a small set of characteristic items. At generation step $s \geq 2$, after the prefix $R^{div}_{s-1} = (j_1,\ldots,j_{s-1})$ has been chosen, we re-encode the prefix with the same encoder to obtain $\mathbf{h}_{R} = f_{\mathrm{PT}}(R^{div}_{s-1})$, and compute how strongly each reconstructed intent is already served by the current list:
+where $\tau_o$ is the intent-softmax temperature (default $\tau_o=0.1$, i.e. the sharpness multiplier $1/\tau_o=10$) that concentrates each intent on a small set of characteristic items; the sensitivity to over- and under-sharpening is studied in the temperature experiment. At generation step $s \geq 2$, after the prefix $R^{div}_{s-1} = (j_1,\ldots,j_{s-1})$ has been chosen, we re-encode the prefix with the same encoder to obtain $\mathbf{h}_{R} = f_{\mathrm{PT}}(R^{div}_{s-1})$, and compute how strongly each reconstructed intent is already served by the current list:
 \begin{equation}
 \alpha_{a,s}
  = \frac{\exp(\mathbf{f}_a^\top \mathbf{h}_R)}
@@ -127,7 +127,7 @@ Q_s(j)
 j_s &= \mathop{\arg\max}_{j \in \mathcal{I} \setminus R^{div}_{s-1}} Q_s(j),
 \end{aligned}
 \end{equation}
-where already selected items are excluded by a hard mask, $\lambda \in [0,1]$ trades relevance for intent coverage, and $\lambda_c \geq 0$ controls the consecutive penalty. The parallel greedy path selects $g_s = \arg\max_{j \notin R^{greedy}_{s-1}} P_{\mathrm{rel}}(j)$; both paths share the relevance-maximizing first item $j_1 = \arg\max_j P_{\mathrm{rel}}(j)$ and then diverge. Setting $\lambda = \lambda_c = 0$ recovers pure greedy ranking (the ``nodiv'' baseline). Importantly, $\lambda$ and $\lambda_c$ are \emph{inference-time} knobs: the losses of Section~\ref{sec:diversity} shape the embedding geometry so that diverse lists exist, while the operating point is tuned after training without any retraining. The complete dual-path decoding procedure is given in Algorithm~\ref{alg:pdp}; $k$ items are generated during training and $20$ at test time.
+where already selected items are excluded by a hard mask, $\lambda \in [0,1]$ trades relevance for intent coverage, and $\lambda_c \geq 0$ controls the consecutive penalty. The parallel greedy path selects $g_s = \arg\max_{j \notin R^{greedy}_{s-1}} P_{\mathrm{rel}}(j)$; both paths share the relevance-maximizing first item $j_1 = \arg\max_j P_{\mathrm{rel}}(j)$ and then diverge. Setting $\lambda = \lambda_c = 0$ recovers pure greedy ranking (the ``nodiv'' model). The same decoder with the same $\lambda$ constructs the diverse sequence \emph{during training}, where it defines the tokens on which the diversity loss of Section~\ref{sec:diversity} is evaluated, and at inference, where it selects the returned list; a model trained without the diversity path can still be decoded with the order score, and a model trained with it can still be decoded relevance-only---the two effects are separated in the component ablation. The complete dual-path decoding procedure is given in Algorithm~\ref{alg:pdp}; $k$ items are generated during training and $20$ at test time.
 
 % Requires \usepackage{algorithm} and \usepackage{algpseudocode} in the
 % main preamble. algorithm* spans both columns in a two-column layout.
@@ -137,7 +137,7 @@ where already selected items are excluded by a hard mask, $\lambda \in [0,1]$ tr
 \begin{algorithmic}[1]
 \Require terminal state $\mathbf{h}_T$; RT intent states $\{\mathbf{f}_a\}_{a=1}^{M}$ with beam probabilities $\{P_a^u\}$; scoring vectors $\{\mathbf{w}_j\}$ and content vectors $\{\mathbf{v}_j\}$; list length $k$; trade-off weights $\lambda, \lambda_c$
 \State $P_{\mathrm{rel}}(j) \gets \mathrm{softmax}_{j'}\!\left(\mathbf{h}_T^\top \mathbf{w}_{j'}\right)$
-\State $P_a(j) \gets \mathrm{softmax}_{j'}\!\left(10\,\mathbf{f}_a^\top \mathbf{w}_{j'}\right)$ for every intent $a$ \Comment{sharpened intent distributions}
+\State $P_a(j) \gets \mathrm{softmax}_{j'}\!\left(\mathbf{f}_a^\top \mathbf{w}_{j'}/\tau_o\right)$ for every intent $a$ \Comment{sharpened intent distributions}
 \State $R^{greedy} \gets ()$; $R^{div} \gets ()$; candidate masks $\mathcal{M}_g, \mathcal{M}_d \gets \mathcal{I}$
 \State $j_1 \gets \arg\max_{j \in \mathcal{I}} P_{\mathrm{rel}}(j)$; append $j_1$ to both lists; remove $j_1$ from $\mathcal{M}_g,\mathcal{M}_d$
 \For{$s = 2$ \textbf{to} $k$}
@@ -198,7 +198,7 @@ The final training objective of the PT module is the sum of four terms:
 \begin{equation}
 \mathcal{L} = \mathcal{L}_{ce} + \mathcal{L}_{nce} + \mathcal{L}_{div} + \lambda_{consec} \cdot \mathcal{L}_{consec},
 \end{equation}
-where $\mathcal{L}_{ce}$ is the dense multi-position next-item cross-entropy loss of Eq.~\ref{eq:dense_ce} (reducing to terminal-only supervision when dense supervision is disabled). Note that $\mathcal{L}_{div}$ enters at full strength regardless of $\lambda$, because the training objective is to shape the item embedding space so that diverse generation is possible; the parameter $\lambda$ then only controls how much diversity is requested at \emph{inference} time, offering a tunable knob between the two extremes without retraining.
+where $\mathcal{L}_{ce}$ is the dense multi-position next-item cross-entropy loss of Eq.~\ref{eq:dense_ce} (reducing to terminal-only supervision when dense supervision is disabled). The coefficient $\lambda$ is not a weight on this objective: $\mathcal{L}_{div}$ enters at unit strength for every model trained with the diversity path. Instead $\lambda$ enters the decoder of Eq.~\ref{eq:gen_score} at both training and inference, selecting which diverse sequence the unit-weight loss is evaluated on; checkpoints trained at different $\lambda$ are therefore distinct models, while the score-time coefficient $\lambda_c$ can be varied at inference without retraining.
 
 \subsection{Type-Enriched Item Representations}
 \label{sec:type_embeddings}

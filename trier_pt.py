@@ -63,7 +63,14 @@ class TRIER_PT(nn.Module):
         self.gamma_consec = getattr(args, 'gamma_consec', 0.01)
         # Respect -no_consec flag: disables consecutive similarity loss but keeps overall diversity loss
         self.use_consec = not getattr(args, 'no_consec', False)
-        if not self.use_consec:
+        # Differentiable soft order loss L_order (replaces hard L_consec when set)
+        self.use_soft_order = getattr(args, 'soft_order_loss', False)
+        self.lmd_softorder = getattr(args, 'lmd_softorder', 0.01)
+        if self.use_soft_order:
+            # Reuses the consec loss channel: loss = ... + gamma_consec * consec_loss
+            self.gamma_consec = self.lmd_softorder
+            print("[TRIER_PT] Soft order loss L_order ENABLED (replaces hard L_consec)")
+        if not self.use_consec and not self.use_soft_order:
             print("[TRIER_PT] Consecutive similarity loss DISABLED (-no_consec flag set)")
 
         # --------------------------
@@ -404,7 +411,13 @@ class TRIER_PT(nn.Module):
             div_loss = self.diversity_loss(output_logit, output_logit_greedy, output_token, output_token_greedy, item2vec)
             
             # Calculate consecutive similarity loss on diverse recommendations (if enabled)
-            if self.use_consec:
+            if self.use_soft_order:
+                # Differentiable order loss: soft selection keeps the graph
+                # connected to the generation scores (and hence to logits).
+                consec_loss = self.soft_order_loss(output_logit, item2vec)
+            elif self.use_consec:
+                # Hard loss: gathers frozen item2vec rows at argmax tokens;
+                # has NO gradient path to model logits (see check_order_gradient.py).
                 consec_loss = self.consecutive_similarity_loss(output_token, item2vec)
 
         # Calculate contrastive (NCE) loss if SSL is enabled
@@ -494,7 +507,10 @@ class TRIER_PT(nn.Module):
         lamb = self.args.lamb
         
         # Calculate diversity score using augmented trajectories (combined item+type weights)
-        P_va = (torch.matmul(F, self.combined_item_weight().T) * 10).softmax(-1)
+        # Prospective intent temperature tau_o: sharpness multiplier 1/tau_o
+        # (default 0.1 reproduces the original hardcoded x10).
+        tau_o = float(getattr(self.args, 'tau_o', 0.1) or 0.1)
+        P_va = (torch.matmul(F, self.combined_item_weight().T) * (1.0 / tau_o)).softmax(-1)
         P_a_u = attention_weght + 1e-24  # Avoid division by zero
         
         # Prepare already recommended items for encoding
@@ -609,6 +625,30 @@ class TRIER_PT(nn.Module):
         consec_loss = sim_loss.mean()
         
         return consec_loss
+
+
+    # --------------------------
+    # METHOD: soft_order_loss
+    # Purpose: DIFFERENTIABLE order loss. The hard loss above indexes the
+    #   pretrained item2vec table with argmax'd token ids, so the graph to the
+    #   model logits is severed and its gradient w.r.t. model parameters is
+    #   zero (verified by check_order_gradient.py). Here we replace the hard
+    #   token with a SOFT selection: at each step the expected content vector
+    #   is E[v | Q_s] = sum_j softmax(Q_s / temp)_j v_j, which is a smooth
+    #   function of the generation scores Q_s, hence of the encoder logits.
+    # Input: Per-step generation scores output_logit (list of [batch, n_items],
+    #   WITH grad_fn), pretrained item content vectors item2vec [n_items, d_v]
+    # Output: Scalar loss with a live gradient path to the logits
+    # --------------------------
+    def soft_order_loss(self, output_logit, item2vec, temp=None, margin=0.5):
+        temp = float(getattr(self.args, 'soft_order_temp', 1.0)) if temp is None else float(temp)
+        vecs = item2vec.to(self.device)                       # [n_items, d_v], constant
+        scores = torch.stack(output_logit, dim=1)            # [batch, k, n_items]
+        probs = (scores / temp).softmax(dim=-1)              # soft item selection
+        exp_vec = torch.matmul(probs, vecs)                  # [batch, k, d_v]
+        exp_norm = exp_vec / (exp_vec.norm(dim=-1, keepdim=True) + 1e-8)
+        cos_sim = (exp_norm[:, :-1, :] * exp_norm[:, 1:, :]).sum(dim=-1)  # [batch, k-1]
+        return F.relu(cos_sim - margin).mean()
 
 
     # --------------------------
