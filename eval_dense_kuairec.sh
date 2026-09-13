@@ -142,7 +142,8 @@ run_eval () {
 
 # Groups: dense sweeps all 9 configs; author/music run lamb0005 + lamb01;
 # authormusic/typeall run only lamb01; dur keeps its lamb0005 results.
-for GROUP in dense author music dur authormusic typeall; do
+for GROUP in dense author music dur authormusic typeall consec; do
+  OUTSUF_MODE=0
   case "$GROUP" in
     dense)
       CFGS=("${CONFIGS[@]}")
@@ -239,7 +240,7 @@ for FAM in "${FAMS[@]}"; do
                     "${SMALL_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt" \
                     "$TYPE_FLAG" "greedy" "$RT_DIR" \
                     "${PT_DIR}/test_result_small${OUTSUF}.txt" \
-                    "${FAM_NAME}_${SUFFIX}_${VAR}_greedy_small" "$EXTRA" "$LMD"
+                    "${FAM_NAME}_${SUFFIX}${OUTSUF}_${VAR}_greedy_small" "$EXTRA" "$LMD"
             fi
             echo ""
         done
