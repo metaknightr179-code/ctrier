@@ -3,9 +3,11 @@
 # lambda_c GRID EVAL — kuairec_first_average, fixed lambda=0.005, dense.
 # Runs AFTER train_lmdconsec_grid_firstavg.sh.
 #
-# Each grid point uses its OWN separately-trained checkpoint and is re-decoded
-# step-wise greedy with the SAME -lmd_consec it was trained with (the penalty
-# is in the generation score q = (1-lambda)P_rel + lambda P_cov - lambda_c cos):
+# Each grid point uses its OWN separately-trained checkpoint (produced by
+# train_lmdconsec_grid_firstavg.sh WITH the Sep-14 penalty indexing fix) and is
+# re-decoded step-wise greedy with the SAME -lmd_consec it was trained with
+# (the penalty is in the generation score q = (1-lambda)P_rel + lambda P_cov
+# - lambda_c cos):
 #
 #   lambda_c  checkpoint suffix (type / notype)
 #   0         lamb0005

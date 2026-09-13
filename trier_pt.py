@@ -541,11 +541,11 @@ class TRIER_PT(nn.Module):
         # Weighted by -lmd_consec (default 0 = off); needs model.item2vec set externally.
         lmd_consec = getattr(self.args, 'lmd_consec', 0.0)
         vecs = getattr(self, 'item2vec', None)
-        if lmd_consec > 0 and vecs is not None and len(output_token) > 0:
+        if lmd_consec > 0 and vecs is not None and output_token.shape[1] > 0:
             if vecs.device != self.device:
                 vecs = vecs.to(self.device)
                 self.item2vec = vecs
-            last_vec = vecs[output_token[-1]]  # [batch, d] item at previous list position
+            last_vec = vecs[output_token[:, -1]]  # [batch, d] item at previous list position
             last_vec = last_vec / (last_vec.norm(dim=-1, keepdim=True) + 1e-8)
             table = vecs / (vecs.norm(dim=-1, keepdim=True) + 1e-8)  # [n_items, d]
             cos = last_vec @ table.t()         # [batch, n_items] cosine to previous item

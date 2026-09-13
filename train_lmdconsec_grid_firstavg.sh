@@ -1,25 +1,28 @@
 #!/bin/bash
 # =============================================================================
-# lambda_c GRID COMPLETION — TRAIN the two missing score-penalty points.
+# lambda_c GRID — TRAIN every non-zero score-penalty point with the FIXED
+# penalty code (output_token[:, -1], commit Sep 14).
 #
-# The established lambda_c sweep (see existing checkpoint dirs) consists of
-# DENSE checkpoints trained at fixed lambda=0.005 with -lmd_consec baked into
-# the generation score used to select the diverse training tokens:
+# Fixed base: lambda=0.005, dense, type ON/OFF, t_mode topk, b=256, lr=1e-3,
+# 1000 epochs, early stop patience 100, same frozen RT, kuairec_first_average
+# by default (override with LMC_VARIANTS).
 #
-#   lambda_c = 0     save_pt_{notype_}dense_lamb0005_<variant>          (exists)
-#   lambda_c = 0.001 save_pt_{notype_}dense_lamb0005_consec0001_<variant> (exists)
-#   lambda_c = 0.005 save_pt_{notype_}dense_lamb0005_consec0005_<variant> (NEW)
-#   lambda_c = 0.01  save_pt_{notype_}dense_lamb0005_consec001_<variant>  (NEW)
-#   lambda_c = 0.05  save_pt_{notype_}dense_lamb0005_consec005_<variant>  (exists)
-#   lambda_c = 0.1   save_pt_{notype_}dense_lamb0005_consec01_<variant>   (exists)
+# Grid:  lambda_c in {0, 0.001, 0.005, 0.01, 0.05, 0.1}
 #
-# Suffix rule: the decimal point of lambda_c is deleted (0.005 -> consec0005).
-# This script trains only the 2 missing points, for both TYPE (PACER Full) and
-# NOTYPE families, on kuairec_first_average by default (override with the
-# LMC_VARIANTS env var, e.g. LMC_VARIANTS="kuairec_first_average ...").
-# Everything else is identical to train_dense_type_fixrt.sh /
-# train_dense_notype_fixrt.sh: dense CE, t_mode topk, b=256, lr=1e-3,
-# 1000 epochs, early stop patience 100, same frozen RT.
+# lambda_c = 0 reuses save_pt_{notype_}dense_lamb0005_<variant> (no training).
+#
+# WARNING — stale checkpoints: the pre-existing dirs
+#   save_pt_{notype_}dense_lamb0005_consec0001_<variant>
+#   save_pt_{notype_}dense_lamb0005_consec005_<variant>
+#   save_pt_{notype_}dense_lamb0005_consec01_<variant>
+# were trained BEFORE -lmd_consec entered the generation score, so the flag
+# was ignored and they are plain lamb0005 models. They MUST be moved aside
+# before running this script (it skips dirs that look complete):
+#
+#   for d in save_pt_*dense_lamb0005_consec*_kuairec_first_average; do
+#       [ -d "$d/model" ] && mv "$d" "${d}_PREPENALTY_OLD"; done
+#
+# Suffix rule: decimal point of lambda_c deleted (0.005 -> consec0005).
 #
 # Usage:
 #   nohup bash train_lmdconsec_grid_firstavg.sh <GPU_ID> > train_lmc.log 2>&1 &
@@ -39,8 +42,11 @@ FAMILIES=(
 
 # SUFFIX|lambda_c
 CONFIGS=(
+    "consec0001|0.001"
     "consec0005|0.005"
     "consec001|0.01"
+    "consec005|0.05"
+    "consec01|0.1"
 )
 
 echo "############################################################"
@@ -81,7 +87,11 @@ for FAM in "${FAMILIES[@]}"; do
         echo "-> ${pt_dir}"
         echo "============================================================"
 
-        EPOCHS_DONE=$(wc -l < "${pt_dir}/train_result.txt" 2>/dev/null); EPOCHS_DONE=${EPOCHS_DONE:-0}
+        if [ -f "${pt_dir}/train_result.txt" ]; then
+            EPOCHS_DONE=$(wc -l < "${pt_dir}/train_result.txt")
+        else
+            EPOCHS_DONE=0
+        fi
         if [ -f "${pt_dir}/DONE" ] || [ -f "${pt_dir}/test_result.txt" ] || [ "$EPOCHS_DONE" -ge "$MAX_EPOCHS" ]; then
             echo "  Already complete (DONE / epoch ${EPOCHS_DONE}) - skip"
             continue
