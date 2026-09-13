@@ -6,18 +6,23 @@
 # script only reuses their result files or runs the ONE new eval combination
 # (TRIER-S: nodiv checkpoint decoded with the diverse greedy scorer).
 #
-#   Cell        checkpoint (First-Average)            Content OrderLoss OrderScore
-#   TRIER       notype_dense_nodiv                      no      no        no
-#   TRIER-C     dense_nodiv (type)                      yes     no        no
-#   TRIER-L     notype_dense_lamb01  (topk eval)        no      yes       no
-#   TRIER-S     notype_dense_nodiv  (greedy lamb=.01)   no      no        yes   <- NEW eval
-#   PACER-LS    notype_dense_lamb01 (greedy lamb=.01)   no      yes       yes
-#   PACER-Full  dense_lamb01        (greedy lamb=.01)   yes     yes       yes
+#   Cell        checkpoint (First-Average)             Content OrderLoss OrderScore
+#   TRIER       notype_dense_nodiv                       no      no        no
+#   TRIER-C     dense_nodiv (type)                       yes     no        no
+#   TRIER-L     notype_dense_lamb001  (topk eval)        no      yes       no
+#   TRIER-S     notype_dense_nodiv  (greedy lamb=.01)    no      no        yes   <- NEW eval
+#   PACER-LS    notype_dense_lamb001 (greedy lamb=.01)   no      yes       yes
+#   PACER-Full  dense_lamb001       (greedy lamb=.01)   yes     yes       yes
 #
-# "Order loss" entered during TRAINING (-div -lamb 0.01 vs nodiv); "Order
-# score" is the inference-time diverse greedy decoder (-div -lamb 0.01 vs
-# relevance-only topk). Existing, bit-identical result files are copied;
-# only missing combinations are actually evaluated.
+# NAMING WARNING: in the dense training scripts the suffix lamb01 means the
+# checkpoint was TRAINED at -lamb 0.1, while lamb001 means -lamb 0.01. This
+# ablation is at the lambda=0.01 operating point, so it MUST use lamb001 dirs.
+#
+# "Order loss" entered during TRAINING (-div -lamb 0.01 via calculate_score,
+# which shapes the diverse tokens L_div is evaluated on); "Order score" is the
+# inference-time diverse greedy decoder (-div -lamb 0.01 vs relevance-only
+# topk). Existing, bit-identical result files are copied; only missing
+# combinations are actually evaluated.
 #
 # Usage:
 #   CUDA_VISIBLE_DEVICES=0 bash eval_sixcell_ablation_kuairec.sh
@@ -43,10 +48,10 @@ NEG_SMALL="${SMALL_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt"
 CELLS=(
     "TRIER|save_pt_notype_dense_nodiv_${VAR}|-no_type|topk"
     "TRIER-C|save_pt_dense_nodiv_${VAR}||topk"
-    "TRIER-L|save_pt_notype_dense_lamb01_${VAR}|-no_type|topk"
+    "TRIER-L|save_pt_notype_dense_lamb001_${VAR}|-no_type|topk"
     "TRIER-S|save_pt_notype_dense_nodiv_${VAR}|-no_type|greedy"
-    "PACER-LS|save_pt_notype_dense_lamb01_${VAR}|-no_type|greedy"
-    "PACER-Full|save_pt_dense_lamb01_${VAR}||greedy"
+    "PACER-LS|save_pt_notype_dense_lamb001_${VAR}|-no_type|greedy"
+    "PACER-Full|save_pt_dense_lamb001_${VAR}||greedy"
 )
 
 get_latest_epoch() {

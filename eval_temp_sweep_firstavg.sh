@@ -5,9 +5,10 @@
 # step-wise greedy decoding (-div -lamb 0.01 -gamma_consec 0, no -lmd_consec).
 # Only tau_o differs; each checkpoint is re-decoded with its OWN tau_o.
 #
-# tau_o = 0.1 reuses save_pt_dense_lamb01_kuairec_first_average (trained with
-# the original hardcoded x10 = 1/0.1; its test_result{,_small}.txt are the
-# 0.1 cells and are SKIPped when up-to-date).
+# tau_o = 0.1 reuses save_pt_dense_lamb001_kuairec_first_average (trained with
+# the original hardcoded x10 = 1/0.1 at -lamb 0.01; dense naming lamb001, NOT
+# lamb01 which is -lamb 0.1); its test_result{,_small}.txt are the 0.1 cells
+# and are SKIPped when up-to-date.
 #
 # top-k evals are intentionally skipped: that path bypasses the scorer, so
 # tau_o cannot affect it (the top-k numbers are identical across the sweep).
@@ -30,11 +31,11 @@ NEG_SMALL="${SMALL_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt"
 
 # TAG|tau_o|PT_DIR
 CONFIGS=(
-    "tau005|0.05|save_pt_dense_lamb01_tau005_${VAR}"
-    "tau01|0.1|save_pt_dense_lamb01_${VAR}"
-    "tau02|0.2|save_pt_dense_lamb01_tau02_${VAR}"
-    "tau05|0.5|save_pt_dense_lamb01_tau05_${VAR}"
-    "tau1|1.0|save_pt_dense_lamb01_tau1_${VAR}"
+    "tau005|0.05|save_pt_dense_lamb001_tau005_${VAR}"
+    "tau01|0.1|save_pt_dense_lamb001_${VAR}"
+    "tau02|0.2|save_pt_dense_lamb001_tau02_${VAR}"
+    "tau05|0.5|save_pt_dense_lamb001_tau05_${VAR}"
+    "tau1|1.0|save_pt_dense_lamb001_tau1_${VAR}"
 )
 
 get_latest_epoch() {
@@ -98,11 +99,11 @@ python3 - <<'PY'
 import ast
 
 configs = [
-    ("0.05", "save_pt_dense_lamb01_tau005_kuairec_first_average"),
-    ("0.1",  "save_pt_dense_lamb01_kuairec_first_average"),
-    ("0.2",  "save_pt_dense_lamb01_tau02_kuairec_first_average"),
-    ("0.5",  "save_pt_dense_lamb01_tau05_kuairec_first_average"),
-    ("1.0",  "save_pt_dense_lamb01_tau1_kuairec_first_average"),
+    ("0.05", "save_pt_dense_lamb001_tau005_kuairec_first_average"),
+    ("0.1",  "save_pt_dense_lamb001_kuairec_first_average"),
+    ("0.2",  "save_pt_dense_lamb001_tau02_kuairec_first_average"),
+    ("0.5",  "save_pt_dense_lamb001_tau05_kuairec_first_average"),
+    ("1.0",  "save_pt_dense_lamb001_tau1_kuairec_first_average"),
 ]
 keys = ["recall@5_f", "recall@10_f", "recall@20_f",
         "ndcg@5_f", "ndcg@10_f", "ndcg@20_f",

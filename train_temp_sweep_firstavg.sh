@@ -7,8 +7,9 @@
 #   same RT checkpoint (save_rt_fix_kuairec_first_average).
 # Only tau_o varies: 0.05, 0.2, 0.5, 1.0 are trained here.
 # The tau_o = 0.1 cell (multiplier x10, original TRIER behavior) ALREADY
-# EXISTS as save_pt_dense_lamb01_kuairec_first_average and is reused by the
-# eval script — do not retrain it.
+# EXISTS as save_pt_dense_lamb001_kuairec_first_average (note: dense naming
+# uses lamb001 = -lamb 0.01; lamb01 would mean -lamb 0.1!) and is reused by
+# the eval script — do not retrain it.
 #
 # Usage:
 #   nohup bash train_temp_sweep_firstavg.sh <GPU_ID> > train_temp_sweep.log 2>&1 &
@@ -31,7 +32,7 @@ CONFIGS=(
 
 echo "############################################################"
 echo "# tau_o TEMPERATURE SWEEP training, GPU ${GPU}, ${VAR}"
-echo "# (tau_o=0.1 is the existing save_pt_dense_lamb01_${VAR})"
+echo "# (tau_o=0.1 is the existing save_pt_dense_lamb001_${VAR})"
 echo "############################################################"
 
 # Wait for RT (normally already long finished)
@@ -53,7 +54,7 @@ echo "[Wait] RT complete (epoch $(wc -l < "${rt_log}" 2>/dev/null))."
 
 for CFG in "${CONFIGS[@]}"; do
     IFS='|' read -r TAG TAU <<< "$CFG"
-    pt_dir="save_pt_dense_lamb01_${TAG}_${VAR}"
+    pt_dir="save_pt_dense_lamb001_${TAG}_${VAR}"
     pt_log="pt_temp_${TAG}_${VAR}.log"
 
     echo "============================================================"
