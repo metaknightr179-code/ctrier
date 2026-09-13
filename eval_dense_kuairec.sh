@@ -176,8 +176,10 @@ for GROUP in dense author music dur authormusic typeall consec; do
       EXTRA="$AUTHOR_EXTRA $MUSIC_EXTRA"
       ;;
     consec)
-      # SUFFIX|LAMB|CONSEC|LMD — outputs get _${SUFFIX} appended to the filename
-      CFGS=("c001|0.01|0|0.01" "c005|0.01|0|0.05" "c01|0.01|0|0.1" "c02|0.01|0|0.2")
+      # OUTSUF|DIRSUF|LAMB|CONSEC|LMD — re-evaluate the lamb01 checkpoints with
+      # different -lmd_consec; outputs get _${OUTSUF} appended to the filename.
+      CFGS=("c001|lamb01|0.01|0|0.01" "c005|lamb01|0.01|0|0.05" \
+            "c01|lamb01|0.01|0|0.1"   "c02|lamb01|0.01|0|0.2")
       FAMS=("${FAMILIES[@]}")
       EXTRA=""
       OUTSUF_MODE=1
@@ -186,10 +188,17 @@ for GROUP in dense author music dur authormusic typeall consec; do
 for FAM in "${FAMS[@]}"; do
     IFS='|' read -r FAM_NAME DIR_PREFIX TYPE_FLAG <<< "$FAM"
     for CFG in "${CFGS[@]}"; do
-        IFS='|' read -r SUFFIX LAMB CONSEC LMD <<< "$CFG"
-        OUTSUF=""; [ "$OUTSUF_MODE" = "1" ] && OUTSUF="_${SUFFIX}"
+        if [ "$OUTSUF_MODE" = "1" ]; then
+            # 5-field consec configs: OUTSUF|DIRSUF|LAMB|CONSEC|LMD
+            IFS='|' read -r SUFFIX DIRSUF LAMB CONSEC LMD <<< "$CFG"
+            OUTSUF="_${SUFFIX}"
+        else
+            # 3-field dense/side-info configs: SUFFIX|LAMB|CONSEC
+            IFS='|' read -r SUFFIX LAMB CONSEC <<< "$CFG"
+            DIRSUF="$SUFFIX"; LMD=0; OUTSUF=""
+        fi
         for VAR in "${VARIANTS[@]}"; do
-            PT_DIR="./${DIR_PREFIX}${SUFFIX}_${VAR}"
+            PT_DIR="./${DIR_PREFIX}${DIRSUF}_${VAR}"
             [ ! -d "$PT_DIR/model" ] && { echo "SKIP: missing $PT_DIR"; continue; }
             LATEST=$(get_latest_epoch "${PT_DIR}/model")
             [ -z "$LATEST" ] && { echo "SKIP: no checkpoint in $PT_DIR"; continue; }
@@ -240,7 +249,7 @@ for FAM in "${FAMS[@]}"; do
                     "${SMALL_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt" \
                     "$TYPE_FLAG" "greedy" "$RT_DIR" \
                     "${PT_DIR}/test_result_small${OUTSUF}.txt" \
-                    "${FAM_NAME}_${SUFFIX}${OUTSUF}_${VAR}_greedy_small" "$EXTRA" "$LMD"
+                    "${FAM_NAME}_${SUFFIX}_${VAR}_greedy_small" "$EXTRA" "$LMD"
             fi
             echo ""
         done
