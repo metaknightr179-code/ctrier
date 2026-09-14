@@ -5,7 +5,10 @@
 %   - fuse: item + type(masked-mean category) + author + music + position
 %   - PT  : forward transformer with dense per-position CE + cross-view NCE
 %   - gen : step-wise generate_by_score; greedy vs combined-score diverse path
-%   - losses: L_ce (dense), L_nce, L_div (ILD advantage), L_consec (adjacent)
+%   - losses: L_ce (dense), L_nce, L_div (ILD advantage),
+%             gamma_o L_order (soft adjacent order, TRAINING only);
+%             -lambda_c C_s(j) is the hard adjacent penalty in the
+%             INFERENCE-time score and is never drawn as a training loss.
 %
 % LAYOUT NOTE: node minimum widths MUST be at least as wide as their longest
 % text line. TikZ silently grows narrower nodes, sliding their west anchor
@@ -45,6 +48,7 @@
   ptb/.style={box, fill=green!8, draw=green!40!black},
   emb/.style={box, fill=purple!8, draw=purple!45},
   loss/.style={box, fill=orange!12, draw=orange!60!black},
+  softd/.style={box, fill=cyan!9, draw=cyan!55!black},
   lst/.style={box, fill=yellow!18, draw=yellow!70!black},
   arr/.style={-{Stealth[length=2.2mm]}, semithick},
   darr/.style={arr, dashed, gray!60!black},
@@ -104,13 +108,14 @@
 \draw[darr] (hs.south) -- (lce.north);
 
 % ---------------- total objective (bottom left) ----------------
-\node[loss, fill=orange!20, minimum width=5.8cm, minimum height=1.7cm] (ltot)
+\node[loss, fill=orange!20, minimum width=5.8cm, minimum height=1.9cm] (ltot)
   at (3.4,-2.3)
   {PT training objective\\[2pt]
    $\mathcal L=\mathcal L_{ce}+\mathcal L_{nce}+\mathcal L_{div}
-    +\gamma_c\,\mathcal L_{consec}$\\[2pt]
-   {\scriptsize $\gamma_c$: training weight;
-    $\lambda,\lambda_c$: inference-time knobs (no retraining)}};
+    +\gamma_o\,\mathcal L_{order}$\\[2pt]
+   {\scriptsize $\gamma_o$: training weight of $\mathcal L_{order}$}\\
+   {\scriptsize $\lambda$ shapes the diverse decoder;
+    $\lambda_c$: inference score knob (no retraining)}};
 \draw[darr, dotted] (lnce.west) to[bend left=12] (ltot.north east);
 \draw[darr, dotted] (lce.west)  to[bend left=18] (ltot.east);
 
@@ -120,31 +125,59 @@
    {\footnotesize greedy path: $P_{\mathrm{rel}}(j)$}\\[1pt]
    {\footnotesize diverse path:
     $(1-\lambda)P_{\mathrm{rel}}+\lambda P_{\mathrm{cov}}
-     -\lambda_c\,C(\cdot;j_{s-1})$}};
+     -\lambda_c\,C_s(j)$}};
 \draw[arr] (hs.south) -- (gen.north);
 
-% ---------------- generated lists (y = -4.7) ----------------
-\node[lst, minimum width=2.4cm, minimum height=1.1cm] (rg) at (9.9,-4.7)
-  {$R^{greedy}$\\ {\scriptsize relevance only}};
-\node[lst, minimum width=2.6cm, minimum height=1.1cm] (rd) at (13.7,-4.7)
-  {$R^{div}$ top-$k$\\ {\scriptsize inference output}};
-\draw[arr] (gen.south) -- (rg.north);
-\draw[arr] (gen.south) -- (rd.north);
+% ---------------- inference output (SOLID branch, y = -4.7) ----------------
+% Pure deployment output: this node has NO arrows into training losses.
+\node[lst, minimum width=2.9cm, minimum height=1.1cm] (ri) at (8.0,-4.7)
+  {$R^{greedy},\,R^{div}$\\ {\scriptsize inference lists}};
+\draw[arr] (9.3,-3.1) -- node[lbl, pos=0.12]{inference} (ri.north);
 
-% ---------------- list-level losses (y = -6.4) ----------------
-\node[loss, minimum width=4.6cm, minimum height=1.2cm] (ldiv) at (9.9,-6.4)
+% ---------------- training-time soft distributions (DASHED branch) ----------
+% The decoder scores Q_s at two adjacent positions are turned into soft item
+% distributions; L_order reads BOTH of them (never an argmax'd token).
+\node[softd, minimum width=3.4cm, minimum height=1.5cm] (pip) at (11.3,-4.7)
+  {Soft item distribution\\ at position $s-1$\\[1pt]
+   {\scriptsize $\boldsymbol\pi_{s-1}$}\\
+   {\scriptsize $=\operatorname{softmax}(Q_{s-1}/\tau_o)$}};
+\node[softd, minimum width=3.4cm, minimum height=1.5cm] (pi) at (14.9,-4.7)
+  {Soft item distribution\\ at position $s$\\[1pt]
+   {\scriptsize $\boldsymbol\pi_s$}\\
+   {\scriptsize $=\operatorname{softmax}(Q_s/\tau_o)$}};
+\draw[darr] (11.7,-3.1) -- (pip.north);
+\draw[darr] (14.5,-3.1) -- (pi.north);
+\node[lbl] at (13.3,-3.52) {training};
+
+% ---------------- list-level training losses (y = -6.3/-6.5) ----------------
+\node[loss, minimum width=4.0cm, minimum height=1.2cm] (ldiv) at (5.4,-6.3)
   {$\mathcal L_{div}$ ILD advantage\\
    $\mathrm{ILD}(R^{div})-\mathrm{ILD}(R^{greedy})$};
-\node[loss, minimum width=2.6cm, minimum height=1.2cm] (lc) at (14.1,-6.4)
-  {$\mathcal L_{consec}$\\ adjacent-item penalty};
-\draw[darr] (rg.south) -- (ldiv.north);
-\draw[darr] (rd.south west) -- (ldiv.north east);
-\draw[darr] (rd.south) -- (lc.north);
+\node[loss, minimum width=4.4cm, minimum height=1.5cm] (lo) at (13.3,-6.5)
+  {$\gamma_o\,\mathcal L_{order}$ soft adjacent-order loss\\
+   {\scriptsize $\bar{\mathbf v}_s=\sum_j \pi_s(j)\,\mathbf v_j$;
+    penalize $\cos(\bar{\mathbf v}_s,\bar{\mathbf v}_{s-1})>m$}};
+
+% Train-time list comparison: dashed, routed below ltot and left of the
+% inference node so it never shares a line with the inference output.
+\draw[darr] (9.7,-3.1) -- (9.7,-3.7) -| (ldiv.north);
+\node[lbl] at (6.4,-3.7) {train-time lists};
+
+% The TWO ADJACENT SOFT DISTRIBUTIONS both point to L_order.
+\draw[darr] (pip.south) -- (12.1,-5.75);
+\draw[darr] (pi.south)  -- (14.5,-5.75);
+
+% Losses roll up into the total training objective.
+\draw[darr, dotted] (ldiv.north) to[bend right=22] (ltot.south);
+\draw[darr, dotted] (lo.west) to[bend left=18] (ltot.south east);
 
 % ---------------- stage frames ----------------
+% framepad keeps the curved lo->ltot connector inside the dashed stage frame.
+\coordinate (framepad) at (8.0,-8.0);
 \begin{scope}[on background layer]
   \node[stage, fit=(rev)(rte)(beam)(pref)] (st1) {};
-  \node[stage, fit=(seq)(fuse)(fusenote)(pte)(hs)(lnce)(lce)(gen)(rg)(rd)(ldiv)(lc)(ltot)] (st2) {};
+  \node[stage, fit=(seq)(fuse)(fusenote)(pte)(hs)(lnce)(lce)(gen)
+                       (ri)(pip)(pi)(ldiv)(lo)(ltot)(framepad)] (st2) {};
 \end{scope}
 \node[stagelbl, anchor=south west] at (st1.north west)
   {Stage 1: Retrospective Greedy Search (RT)};
@@ -161,9 +194,12 @@ ID, category (masked-mean pooled), creator, and music embeddings together with
 a positional embedding; a forward transformer is trained with dense
 per-position next-item supervision ($\mathcal L_{ce}$), cross-view contrastive
 learning ($\mathcal L_{nce}$), an ILD list-diversity loss
-($\mathcal L_{div}$), and an adjacent-item consecutive penalty
-($\mathcal L_{consec}$). At inference, lists are generated step by step with
-the combined relevance--coverage--consecutive score; $\lambda$ and
-$\lambda_c$ are tuned without retraining.}
+($\mathcal L_{div}$), and a differentiable \emph{soft} adjacent-order loss
+($\gamma_o\mathcal L_{order}$) computed from the soft item distributions at two
+neighbouring list positions rather than from argmax tokens (solid arrows mark
+the inference branch, dashed arrows the training branch). At inference, lists
+are generated step by step with the combined relevance--coverage score that
+additionally carries the hard adjacent-content penalty $-\lambda_c C_s(j)$;
+$\lambda_c$ is tuned without retraining.}
 \label{fig:pacer_framework}
 \end{figure*}
