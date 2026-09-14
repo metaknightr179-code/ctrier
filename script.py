@@ -261,6 +261,41 @@ def evaluate_function_with_full(positives, output_token,
                     result[i][f'CS@{k}'] = cos_sim.mean().item()
                 else:
                     result[i][f'CS@{k}'] = 0.0
+            # MaxRun@k: longest contiguous segment of mutually similar items.
+            # An adjacent pair is "similar" iff they share a category OR
+            # cos(v_i, v_{i-1}) > 0.7. Definition: MaxRun = 1 + max window sum
+            # of the a_s indicators (so 1 = no adjacent similarities, k = all similar).
+            TAU_RUN = 0.7
+            for k in [5, 10, 20]:
+                if k < 2:
+                    result[i][f'MaxRun@{k}'] = 1.0
+                    continue
+                vecs = item2vec[idx_tensor[:k]]
+                v1 = vecs[:-1]
+                v2 = vecs[1:]
+                cos_sim = torch.nn.functional.cosine_similarity(v1, v2, dim=-1)
+                sim_cos = cos_sim > TAU_RUN            # [k-1] bool
+                sim_cat = torch.zeros(k - 1, dtype=torch.bool)
+                if cat_map is not None:
+                    items_k = gen_list[:k].tolist()
+                    for s in range(k - 1):
+                        j_prev, j_curr = items_k[s], items_k[s + 1]
+                        c_prev = set(cat_map.get(j_prev, []))
+                        c_curr = set(cat_map.get(j_curr, []))
+                        if c_prev and c_prev.intersection(c_curr):
+                            sim_cat[s] = True
+                a_s = sim_cos.cpu() | sim_cat          # [k-1] bool
+                # Longest contiguous run: O(k) linear scan
+                max_run = 1
+                cur = 1
+                for s in range(k - 1):
+                    if a_s[s]:
+                        cur += 1
+                        if cur > max_run:
+                            max_run = cur
+                    else:
+                        cur = 1
+                result[i][f'MaxRun@{k}'] = float(max_run)
         # ILD = torch.sum(torch.cdist(item2vec1[torch.tensor(pred_list1)],
         #                              item2vec1[torch.tensor(pred_list1)])) / (topk * (topk - 1))
         # 针对每个user计算平均coverage
