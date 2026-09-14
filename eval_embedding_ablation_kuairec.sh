@@ -24,8 +24,8 @@
 #   greedy big matrix   -> test_result.txt         (needs save_rt_fix_<variant>)
 #   greedy small matrix -> test_result_small.txt   (needs KuaiRec_small_eval/<variant>)
 #
-# Greedy decoding uses -div -lamb 0.01 -gamma_consec 0 (no -lmd_consec),
-# matching the main lambda-sweep operating point.
+# Greedy decoding uses -div -lamb 0.01 -gamma_consec 0.01 (no -lmd_consec),
+# matching the λ_c = 0.01 inference-time penalty default.
 #
 # Usage:
 #   CUDA_VISIBLE_DEVICES=0 bash eval_embedding_ablation_kuairec.sh
@@ -45,7 +45,7 @@ set -u
 
 GPU=${CUDA_VISIBLE_DEVICES:-0}
 LAMB=0.01
-CONSEC=0
+CONSEC=0.01
 FORCE_REEVAL=${FORCE_REEVAL:-0}
 
 VARIANTS=( ${ABL_VARIANTS:-kuairec_first_average} )

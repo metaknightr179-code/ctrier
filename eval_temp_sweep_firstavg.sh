@@ -2,7 +2,7 @@
 # =============================================================================
 # Eval for the tau_o TEMPERATURE SWEEP (run after train_temp_sweep_firstavg.sh).
 # Fixed: variant = kuairec_first_average, TYPE family, lambda = 0.01,
-# step-wise greedy decoding (-div -lamb 0.01 -gamma_consec 0, no -lmd_consec).
+# step-wise greedy decoding (-div -lamb 0.01 -gamma_consec 0.01, no -lmd_consec).
 # Only tau_o differs; each checkpoint is re-decoded with its OWN tau_o.
 #
 # tau_o = 0.1 reuses save_pt_dense_lamb001_kuairec_first_average (trained with
@@ -64,7 +64,7 @@ run_eval () {
         -cat "${VAR_DIR}/kuairec_cate.txt" \
         -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
         -m test -e ${LATEST} -b 256 \
-        -div -lamb ${LAMB} -tau_o ${TAU} -gamma_consec 0 -t_mode greedy \
+        -div -lamb ${LAMB} -tau_o ${TAU} -gamma_consec 0.01 -t_mode greedy \
         -start_epoch ${LATEST} -epoch_step 1 \
         -i "$RT_DIR" -o "$STAGE" 2>&1 | tail -2
     cp "${STAGE}/test_result.txt" "$OUT" && echo "    -> $OUT"
