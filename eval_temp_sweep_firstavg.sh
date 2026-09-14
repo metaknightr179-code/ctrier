@@ -2,16 +2,19 @@
 # =============================================================================
 # Eval for the tau_o TEMPERATURE SWEEP (run after train_temp_sweep_firstavg.sh).
 # Fixed: variant = kuairec_first_average, TYPE family, lambda = 0.01,
-# step-wise greedy decoding (-div -lamb 0.01 -gamma_consec 0.01, no -lmd_consec).
-# Only tau_o differs; each checkpoint is re-decoded with its OWN tau_o.
+# step-wise greedy decoding (-div -lamb 0.01 -lmd_consec 0.01; -gamma_consec
+# is a TRAINING loss weight and inert at test). Only tau_o differs; each
+# checkpoint is re-decoded with its OWN tau_o.
 #
 # tau_o = 0.1 reuses save_pt_dense_lamb001_kuairec_first_average (trained with
 # the original hardcoded x10 = 1/0.1 at -lamb 0.01; dense naming lamb001, NOT
-# lamb01 which is -lamb 0.1); its test_result{,_small}.txt are the 0.1 cells
-# and are SKIPped when up-to-date.
+# lamb01 which is -lamb 0.1).
+#
+# Outputs are sweep-specific (test_result_tau*.txt / test_result_small_tau*.txt)
+# so the canonical penalty-off test_result{,_small}.txt is NOT overwritten.
 #
 # top-k evals are intentionally skipped: that path bypasses the scorer, so
-# tau_o cannot affect it (the top-k numbers are identical across the sweep).
+# tau_o/lambda_c cannot affect it (the top-k numbers are identical across the sweep).
 #
 # Usage:
 #   CUDA_VISIBLE_DEVICES=0 bash eval_temp_sweep_firstavg.sh
@@ -64,7 +67,8 @@ run_eval () {
         -cat "${VAR_DIR}/kuairec_cate.txt" \
         -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
         -m test -e ${LATEST} -b 256 \
-        -div -lamb ${LAMB} -tau_o ${TAU} -gamma_consec 0.01 -t_mode greedy \
+        -div -lamb ${LAMB} -tau_o ${TAU} -gamma_consec 0 -lmd_consec 0.01 \
+        -t_mode greedy \
         -start_epoch ${LATEST} -epoch_step 1 \
         -i "$RT_DIR" -o "$STAGE" 2>&1 | tail -2
     cp "${STAGE}/test_result.txt" "$OUT" && echo "    -> $OUT"
@@ -84,10 +88,10 @@ for CFG in "${CONFIGS[@]}"; do
     [ -z "$LATEST" ] && { echo "SKIP [${TAG}]: no checkpoint in ${PT_DIR}"; continue; }
 
     run_eval "$PT_DIR" "$LATEST" "${VAR_DIR}/test-v0.txt" "$NEG_BIG" \
-             "$TAU" "${PT_DIR}/test_result.txt" "temp_${TAG}_big"
+             "$TAU" "${PT_DIR}/test_result_${TAG}.txt" "temp_${TAG}_big"
     if [ -f "${SMALL_DIR}/test-v0.txt" ]; then
         run_eval "$PT_DIR" "$LATEST" "${SMALL_DIR}/test-v0.txt" "$NEG_SMALL" \
-                 "$TAU" "${PT_DIR}/test_result_small.txt" "temp_${TAG}_small"
+                 "$TAU" "${PT_DIR}/test_result_small_${TAG}.txt" "temp_${TAG}_small"
     fi
     echo ""
 done
@@ -99,25 +103,27 @@ python3 - <<'PY'
 import ast
 
 configs = [
-    ("0.05", "save_pt_dense_lamb001_tau005_kuairec_first_average"),
-    ("0.1",  "save_pt_dense_lamb001_kuairec_first_average"),
-    ("0.2",  "save_pt_dense_lamb001_tau02_kuairec_first_average"),
-    ("0.5",  "save_pt_dense_lamb001_tau05_kuairec_first_average"),
-    ("1.0",  "save_pt_dense_lamb001_tau1_kuairec_first_average"),
+    ("0.05", "save_pt_dense_lamb001_tau005_kuairec_first_average", "tau005"),
+    ("0.1",  "save_pt_dense_lamb001_kuairec_first_average",         "tau01"),
+    ("0.2",  "save_pt_dense_lamb001_tau02_kuairec_first_average",   "tau02"),
+    ("0.5",  "save_pt_dense_lamb001_tau05_kuairec_first_average",   "tau05"),
+    ("1.0",  "save_pt_dense_lamb001_tau1_kuairec_first_average",    "tau1"),
 ]
 keys = ["recall@5_f", "recall@10_f", "recall@20_f",
         "ndcg@5_f", "ndcg@10_f", "ndcg@20_f",
-        "ild@20_f", "cc@20_f", "cs@20_f"]
+        "ILD@20", "CC@20", "CS@20", "MaxRun@20"]
 print(f"{'tau_o':<6} " + " ".join(f"{k.replace('_f',''):>11}" for k in keys))
-for tau, d in configs:
-    path = f"{d}/test_result_small.txt"
+for tau, d, tag in configs:
+    path = f"{d}/test_result_small_{tag}.txt"
     try:
         with open(path) as f:
             m = ast.literal_eval(f.readline().strip())
     except FileNotFoundError:
         print(f"{tau:<6} MISSING ({path})")
         continue
-    print(f"{tau:<6} " + " ".join(f"{m.get(k, float('nan')):>11.4f}" for k in keys))
+    row = [f"{m[k]:>11.4f}" if isinstance(m.get(k), (int, float)) else f"{'--':>11}"
+           for k in keys]
+    print(f"{tau:<6} " + " ".join(row))
 PY
 
 echo "tau_o TEMPERATURE SWEEP EVAL DONE"

@@ -20,9 +20,10 @@
 #
 # "Order loss" entered during TRAINING (-div -lamb 0.01 via calculate_score,
 # which shapes the diverse tokens L_div is evaluated on); "Order score" is the
-# inference-time diverse greedy decoder (-div -lamb 0.01 vs relevance-only
-# topk). Existing, bit-identical result files are copied; only missing
-# combinations are actually evaluated.
+# inference-time hard adjacent penalty -lmd_consec 0.01 (=-lambda_c C_s(j)),
+# applied ONLY in the greedy cells that have OrderScore=yes. The greedy cells
+# are ALWAYS re-decoded here (canonical test_result{,_small}.txt are
+# penalty-off and also predate MaxRun@k, so they must not be reused).
 #
 # Usage:
 #   CUDA_VISIBLE_DEVICES=0 bash eval_sixcell_ablation_kuairec.sh
@@ -44,14 +45,14 @@ RT_DIR="./save_rt_fix_${VAR}"
 NEG_BIG="${VAR_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt"
 NEG_SMALL="${SMALL_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt"
 
-# NAME|PT_DIR|TYPE_FLAG|MODE(topk|greedy)
+# NAME|PT_DIR|TYPE_FLAG|MODE(topk|greedy)|LMD_CONSEC
 CELLS=(
-    "TRIER|save_pt_notype_dense_nodiv_${VAR}|-no_type|topk"
-    "TRIER-C|save_pt_dense_nodiv_${VAR}||topk"
-    "TRIER-L|save_pt_notype_dense_lamb001_${VAR}|-no_type|topk"
-    "TRIER-S|save_pt_notype_dense_nodiv_${VAR}|-no_type|greedy"
-    "PACER-LS|save_pt_notype_dense_lamb001_${VAR}|-no_type|greedy"
-    "PACER-Full|save_pt_dense_lamb001_${VAR}||greedy"
+    "TRIER|save_pt_notype_dense_nodiv_${VAR}|-no_type|topk|0"
+    "TRIER-C|save_pt_dense_nodiv_${VAR}||topk|0"
+    "TRIER-L|save_pt_notype_dense_lamb001_${VAR}|-no_type|topk|0"
+    "TRIER-S|save_pt_notype_dense_nodiv_${VAR}|-no_type|greedy|0.01"
+    "PACER-LS|save_pt_notype_dense_lamb001_${VAR}|-no_type|greedy|0.01"
+    "PACER-Full|save_pt_dense_lamb001_${VAR}||greedy|0.01"
 )
 
 get_latest_epoch() {
@@ -71,15 +72,16 @@ reuse_if_present () {
 }
 
 run_eval () {
-    # $1=PT_DIR $2=LATEST $3=EF $4=EN $5=TYPE_FLAG $6=MODE $7=OUT
+    # $1=PT_DIR $2=LATEST $3=EF $4=EN $5=TYPE_FLAG $6=MODE $7=OUT $8=LMD_CONSEC
     local PT_DIR="$1" LATEST="$2" EF="$3" EN="$4" TYPE_FLAG="$5" MODE="$6" OUT="$7"
+    local LMD="$8"
     local STAGE="./save_denseeval_staging/sixcell_$(basename "$PT_DIR")_$(basename "$OUT")"
     rm -rf "$STAGE"; mkdir -p "$STAGE"
     ln -s "$(cd "${PT_DIR}/model" && pwd)" "$STAGE/model"
 
     local DIV_FLAG="-lamb 0" IN_DIR="./rt_dummy_for_duorec"
     if [ "$MODE" = "greedy" ]; then
-        DIV_FLAG="-div -lamb ${LAMB} -gamma_consec 0"
+        DIV_FLAG="-div -lamb ${LAMB} -gamma_consec 0 -lmd_consec ${LMD}"
         IN_DIR="$RT_DIR"
     fi
 
@@ -102,10 +104,10 @@ echo "# SIX-CELL ABLATION (${VAR}, lambda=${LAMB})"
 echo "############################################################"
 
 for CELL in "${CELLS[@]}"; do
-    IFS='|' read -r NAME PT_DIR TYPE_FLAG MODE <<< "$CELL"
+    IFS='|' read -r NAME PT_DIR TYPE_FLAG MODE LMD <<< "$CELL"
     mkdir -p "${OUTDIR}/${NAME}"
     echo ""
-    echo "== ${NAME}  [${MODE}, $( [ -n "$TYPE_FLAG" ] && echo notype || echo type )]  ${PT_DIR}"
+    echo "== ${NAME}  [${MODE}, $( [ -n "$TYPE_FLAG" ] && echo notype || echo type ), lmd_consec=${LMD}]  ${PT_DIR}"
 
     if [ ! -d "${PT_DIR}/model" ]; then
         echo "    MISSING checkpoint dir ${PT_DIR} — train it first"
@@ -118,11 +120,12 @@ for CELL in "${CELLS[@]}"; do
     if [ "$MODE" = "topk" ]; then
         reuse_if_present "${PT_DIR}/test_result_topk.txt" "$OUT_BIG" \
             || run_eval "$PT_DIR" "$LATEST" "${VAR_DIR}/test-v0.txt" "$NEG_BIG" \
-                        "$TYPE_FLAG" topk "$OUT_BIG"
+                        "$TYPE_FLAG" topk "$OUT_BIG" 0
     else
-        reuse_if_present "${PT_DIR}/test_result.txt" "$OUT_BIG" \
-            || run_eval "$PT_DIR" "$LATEST" "${VAR_DIR}/test-v0.txt" "$NEG_BIG" \
-                        "$TYPE_FLAG" greedy "$OUT_BIG"
+        # Greedy Order-score cells: ALWAYS re-decode with -lmd_consec (canonical
+        # greedy files are penalty-off and predate MaxRun).
+        run_eval "$PT_DIR" "$LATEST" "${VAR_DIR}/test-v0.txt" "$NEG_BIG" \
+                    "$TYPE_FLAG" greedy "$OUT_BIG" "$LMD"
     fi
 
     # ---- small matrix ----
@@ -130,11 +133,10 @@ for CELL in "${CELLS[@]}"; do
     if [ "$MODE" = "topk" ]; then
         reuse_if_present "${PT_DIR}/test_result_topk_small.txt" "$OUT_SMALL" \
             || run_eval "$PT_DIR" "$LATEST" "${SMALL_DIR}/test-v0.txt" "$NEG_SMALL" \
-                        "$TYPE_FLAG" topk "$OUT_SMALL"
+                        "$TYPE_FLAG" topk "$OUT_SMALL" 0
     else
-        reuse_if_present "${PT_DIR}/test_result_small.txt" "$OUT_SMALL" \
-            || run_eval "$PT_DIR" "$LATEST" "${SMALL_DIR}/test-v0.txt" "$NEG_SMALL" \
-                        "$TYPE_FLAG" greedy "$OUT_SMALL"
+        run_eval "$PT_DIR" "$LATEST" "${SMALL_DIR}/test-v0.txt" "$NEG_SMALL" \
+                    "$TYPE_FLAG" greedy "$OUT_SMALL" "$LMD"
     fi
 done
 
@@ -149,7 +151,7 @@ outdir = "sixcell_firstavg"
 order = ["TRIER", "TRIER-C", "TRIER-L", "TRIER-S", "PACER-LS", "PACER-Full"]
 keys = ["recall@5_f", "recall@10_f", "recall@20_f",
         "ndcg@5_f", "ndcg@10_f", "ndcg@20_f",
-        "ild@20_f", "cc@20_f", "cs@20_f"]
+        "ILD@20", "CC@20", "CS@20", "MaxRun@20"]
 width = max(map(len, order))
 print(f"{'cell':<{width}} " + " ".join(f"{k.replace('_f',''):>11}" for k in keys))
 for name in order:
@@ -159,7 +161,9 @@ for name in order:
         continue
     with open(path) as f:
         d = ast.literal_eval(f.readline().strip())
-    print(f"{name:<{width}} " + " ".join(f"{d.get(k, float('nan')):>11.4f}" for k in keys))
+    row = [f"{d[k]:>11.4f}" if isinstance(d.get(k), (int, float)) else f"{'--':>11}"
+           for k in keys]
+    print(f"{name:<{width}} " + " ".join(row))
 PY
 
 echo "SIX-CELL ABLATION DONE -> ${OUTDIR}/"

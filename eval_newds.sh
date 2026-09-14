@@ -8,8 +8,6 @@
 #
 # Re-eval (e.g. after adding MaxRun@k): FORCE_REEVAL=1 bash eval_newds.sh 0 ML1M
 #
-# Also evaluates the DuoRec checkpoint save_duorec_<DATASET> if present.
-#
 # Outputs (per checkpoint dir):
 #   test_result_topk.txt       (topk = full-catalog ranking, no RT)
 #   test_result.txt            (greedy = RT beam + diversity blending)
@@ -140,39 +138,3 @@ done
 
 echo "ALL EVALS [${DS}] DONE"
 echo "Results in save_pt_*_${DS}/test_result_topk.txt and test_result.txt"
-
-# -----------------------------------------------------------------------------
-# DuoRec (RT-only model): save_duorec_<DS>, topk protocol, no -div, no type.
-# Mirrors eval_duorec.sh with dataset-specific paths. Skipped silently if the
-# checkpoint dir does not exist (RT training went to save_rt_fix_<DS>).
-# -----------------------------------------------------------------------------
-DUO_DIR="./save_duorec_${DS}"
-if [ -d "${DUO_DIR}/model" ]; then
-    DUO_LATEST=$(get_latest_epoch "${DUO_DIR}/model")
-    DUO_OUT="${DUO_DIR}/test_result.txt"
-    if [ -n "${DUO_LATEST}" ]; then
-        if [ "${FORCE_REEVAL}" = "1" ] && [ -f "$DUO_OUT" ]; then
-            echo "--- DUOREC [${DS}] FORCE re-eval: deleting $DUO_OUT"
-            rm -f "$DUO_OUT"
-        fi
-        NEWER=$(find "${DUO_DIR}/model" -name 'duorec-*.pth' -newer "$DUO_OUT" 2>/dev/null | head -1)
-        if [ -s "$DUO_OUT" ] && [ -z "$NEWER" ]; then
-            echo "--- DUOREC [${DS}] SKIP (up-to-date)"
-        else
-            echo "--- DUOREC [${DS}] epoch ${DUO_LATEST}"
-            mkdir -p ./rt_dummy_for_duorec
-            python3 main_pt.py \
-                -tf "${DIR}/train-v0.txt" \
-                -vf "${DIR}/valid-v0.txt" \
-                -ef "${DIR}/test-v0.txt" \
-                -vn "${DIR}/${NEG}" -en "${DIR}/${NEG}" \
-                -cat "${DIR}/${CATE}" -vec "${DIR}/${VEC}" \
-                -n ${N} -n_cat ${NCAT} -m test -e ${DUO_LATEST} -b ${BATCH} \
-                -no_type -t_mode topk \
-                -start_epoch ${DUO_LATEST} -epoch_step 1 \
-                -i ./rt_dummy_for_duorec -o "$DUO_DIR" 2>&1 | tail -2
-        fi
-    fi
-else
-    echo "SKIP DuoRec: ${DUO_DIR}/model missing (RT was trained as save_rt_fix_${DS})"
-fi

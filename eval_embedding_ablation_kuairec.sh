@@ -24,8 +24,8 @@
 #   greedy big matrix   -> test_result.txt         (needs save_rt_fix_<variant>)
 #   greedy small matrix -> test_result_small.txt   (needs KuaiRec_small_eval/<variant>)
 #
-# Greedy decoding uses -div -lamb 0.01 -gamma_consec 0.01 (no -lmd_consec),
-# matching the λ_c = 0.01 inference-time penalty default.
+# Greedy decoding uses -div -lamb 0.01 -lmd_consec 0.01 (lambda_c hard
+# inference penalty; -gamma_consec is training-only and inert at test).
 #
 # Usage:
 #   CUDA_VISIBLE_DEVICES=0 bash eval_embedding_ablation_kuairec.sh
@@ -96,7 +96,10 @@ run_eval () {
 
     local DIV_FLAG="-lamb 0"
     if [ "$MODE" = "greedy" ] && [ "$LAMB" != "0" ]; then
-        DIV_FLAG="-div -lamb ${LAMB} -gamma_consec ${CONSEC}"
+        # -lmd_consec = lambda_c, the hard inference-time adjacent penalty
+        # (trier_pt.py calculate_score). -gamma_consec is a TRAINING loss
+        # weight and is inert at test, so it is passed as 0.
+        DIV_FLAG="-div -lamb ${LAMB} -gamma_consec 0 -lmd_consec ${CONSEC}"
     fi
     local IN_DIR="./rt_dummy_for_duorec"
     [ "$MODE" = "greedy" ] && IN_DIR="$RT_DIR"
