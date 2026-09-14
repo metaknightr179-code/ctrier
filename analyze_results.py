@@ -656,7 +656,8 @@ def write_embedding_ablation_tex(variant="kuairec_first_average", lamb=0.01,
         these canonical checkpoint dirs: test_result.txt (greedy),
         test_result_small.txt (greedy small), test_result_topk.txt / _topk_small.
 
-    METRIC COLS (same as six-cell): HR/NDCG@{5,10,20}, ILD@20, CC@20, CS@20, MaxRun@20
+    METRIC COLS: HR/NDCG@{5,10,20}, ILD@20, CC@20, CS@20
+    (MaxRun@20 excluded: embedding-ablation evals predate the MaxRun metric.)
     """
     # ── Directory mapping ──────────────────────────────────────────────
     # Baselines: use lamb001 = genuinely trained at λ=0.01
@@ -677,7 +678,7 @@ def write_embedding_ablation_tex(variant="kuairec_first_average", lamb=0.01,
         ("HR@5",   "recall@5_f"),  ("HR@10",  "recall@10_f"),  ("HR@20",  "recall@20_f"),
         ("NDCG@5", "ndcg@5_f"),    ("NDCG@10", "ndcg@10_f"),    ("NDCG@20", "ndcg@20_f"),
         ("ILD@20", "ILD@20"),  ("CC@20", "CC@20"),
-        ("CS@20",  "CS@20"),   ("MaxRun@20", "MaxRun@20"),
+        ("CS@20",  "CS@20"),
     ]
 
     suffix = "_small" if proto == "small" else ""
@@ -707,7 +708,7 @@ def write_embedding_ablation_tex(variant="kuairec_first_average", lamb=0.01,
         r"% Variant: " + variant + r"   λ=" + str(lamb) + r"   proto=" + proto,
         r"% All checkpoints are trained at -lamb 0.01 (DIR NAME suffix trap: lamb01/lamb001",
         r"% both mean λ=0.01 here — see train_pt_sideinfo01_fixrt.sh and train_dense_fixrt.sh).",
-        r"% CS@20 and MaxRun@20 are lower-is-better.",
+        r"% CS@20 is lower-is-better.",
         r"\begin{table*}[t]",
         r"\centering",
         r"\small",
@@ -718,7 +719,7 @@ def write_embedding_ablation_tex(variant="kuairec_first_average", lamb=0.01,
             r"is \emph{notype}: only ID embeddings. \textbf{type} adds the RecFormer-style learnable category embeddings, "
             r"\textbf{author} the per-item creator embeddings, and \textbf{music} the per-item audio embeddings; "
             r"full PACER combines all three. Best HR/NDCG/ILD/CC values per block are \textbf{bold}; "
-            r"for CS@20 and MaxRun@20 lower is better so their best is also bold.}",
+            r"for CS@20 lower is better so its best is also bold.}",
         r"\label{tab:embedding_ablation}",
         r"\resizebox{\textwidth}{!}{%",
         r"\begin{tabular}{lcccc " + "r"*len(metric_cols) + r"}",
