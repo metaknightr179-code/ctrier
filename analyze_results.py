@@ -729,8 +729,10 @@ def write_embedding_ablation_tex(variant="kuairec_first_average", lamb=0.01,
             r"$, " + proto + r"-matrix protocol). The backbone (TRIER-PT, no RT augmentation here) "
             r"is \emph{notype}: only ID embeddings. \textbf{type} adds the RecFormer-style learnable category embeddings, "
             r"\textbf{author} the per-item creator embeddings, and \textbf{music} the per-item audio embeddings; "
-            r"full PACER combines all three. Best HR/NDCG/ILD/CC values per block are \textbf{bold}; "
-            r"for CS@20 and MaxRun@20 lower is better so their best is also bold.}",
+            r"full PACER combines all three. CS@20 is the average similarity of adjacent items in the list, and "
+            r"MaxRun@20 is the length of the longest contiguous segment of mutually similar items "
+            r"($1 = $ no adjacent repetition; $20 = $ the whole list is repetitive). Best HR/NDCG/ILD/CC values per "
+            r"block are \textbf{bold}; for CS@20 and MaxRun@20 lower is better so their best is also bold.}",
         r"\label{tab:embedding_ablation}",
         r"\resizebox{\textwidth}{!}{%",
         r"\begin{tabular}{lcccc " + "r"*len(metric_cols) + r"}",
