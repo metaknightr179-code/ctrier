@@ -935,19 +935,26 @@ def write_gamma_sweep_tex(variant="kuairec_first_average", lamb=0.01,
                           proto="small", path=None):
     """Generate the gamma_o adjacent-order-loss-weight sweep LaTeX table.
 
-    Reads test_result{,_small}_gridgamma.txt produced by
+    Reads test_result{,_small}_gridorder.txt produced by
     eval_consecgamma_grid_firstavg.sh. Every row is a SEPARATELY TRAINED dense
-    checkpoint at fixed lambda=0.01; the eval decodes greedy with the score
-    penalty OFF (lambda_c=0), so the table isolates the training weight
-    gamma_o (the -gamma_consec / L_order channel).
+    checkpoint at fixed lambda=0.01, trained with the DIFFERENTIABLE soft
+    order loss (-soft_order_loss; weight -lmd_softorder); the eval decodes
+    greedy with the score penalty OFF (lambda_c=0), so the table isolates
+    the training weight gamma_o on L_order.
+
+    The earlier lamb001_consec* grid was invalid: it swept -gamma_consec
+    while the HARD L_consec was active, whose gradient w.r.t. logits is zero
+    (frozen item2vec gathered at argmax tokens), so every gamma>0 row was
+    identical. Its 0.01 row also reused canonical files decoded with
+    lambda_c=0.01 and was incomparable. Do not point this table back there.
 
       gamma_o   checkpoint dir suffix (appended to save_pt_{notype_}dense_)
-      0         lamb001_consec0
-      0.001     lamb001_consec0001
-      0.005     lamb001_consec0005
-      0.01      lamb001                    (default-weight model, no suffix)
-      0.05      lamb001_consec005
-      0.1       lamb001_consec01
+      0         lamb001_order0
+      0.001     lamb001_order0001
+      0.005     lamb001_order0005
+      0.01      lamb001_order001
+      0.05      lamb001_order005
+      0.1       lamb001_order01
 
     Two family panels (type = PACER, notype = TRIER_-t) are stacked in one
     table; best value per metric within each panel is bold (lower for CS/MaxRun).
@@ -958,12 +965,12 @@ def write_gamma_sweep_tex(variant="kuairec_first_average", lamb=0.01,
     ]
     # (gamma_o display, dir suffix)
     grid = [
-        ("0",     "lamb001_consec0"),
-        ("0.001", "lamb001_consec0001"),
-        ("0.005", "lamb001_consec0005"),
-        ("0.01",  "lamb001"),
-        ("0.05",  "lamb001_consec005"),
-        ("0.1",   "lamb001_consec01"),
+        ("0",     "lamb001_order0"),
+        ("0.001", "lamb001_order0001"),
+        ("0.005", "lamb001_order0005"),
+        ("0.01",  "lamb001_order001"),
+        ("0.05",  "lamb001_order005"),
+        ("0.1",   "lamb001_order01"),
     ]
 
     metric_cols = [
@@ -975,7 +982,7 @@ def write_gamma_sweep_tex(variant="kuairec_first_average", lamb=0.01,
     lower_better = {"CS@20", "MaxRun@20"}
 
     suffix = "_small" if proto == "small" else ""
-    fname = f"test_result{suffix}_gridgamma.txt"
+    fname = f"test_result{suffix}_gridorder.txt"
 
     panels, missing = [], []
     for fam_label, prefix in families:
@@ -1077,6 +1084,145 @@ def write_gamma_sweep_tex(variant="kuairec_first_average", lamb=0.01,
 
 
 # =============================================================================
+# tau_o prospective-intent temperature sweep table
+# =============================================================================
+def write_temp_sweep_tex(variant="kuairec_first_average", lamb=0.01,
+                         lmd_consec=0.01, proto="small", path=None):
+    """Generate the tau_o prospective-intent-temperature sweep LaTeX table.
+
+    Reads test_result{,_small}_tau<tag>.txt produced by
+    eval_temp_sweep_firstavg.sh (checkpoints from
+    train_temp_sweep_firstavg.sh). Every row is a SEPARATELY TRAINED dense
+    TYPE-family (PACER) checkpoint at fixed lambda=0.01, and each is
+    re-decoded step-wise greedy with its OWN tau_o and the score penalty
+    lambda_c=0.01 (-lmd_consec 0.01).
+
+    tau_o sharpens the prospective-intent distribution
+    P_a(j) = softmax(F w_j / tau_o) used by the diversity scorer; 0.1 is
+    the original TRIER setting (x10) and reuses the plain lamb001 dir.
+
+      tau_o  checkpoint dir                                  result tag
+      0.05   save_pt_dense_lamb001_tau005_<variant>           tau005
+      0.1    save_pt_dense_lamb001_<variant>                  tau01
+      0.2    save_pt_dense_lamb001_tau02_<variant>            tau02
+      0.5    save_pt_dense_lamb001_tau05_<variant>            tau05
+      1.0    save_pt_dense_lamb001_tau1_<variant>             tau1
+
+    Single PACER panel; best value per metric is bold (lower for CS/MaxRun).
+    """
+    # (tau_o display, dir prefix, result tag)
+    grid = [
+        ("0.05", "save_pt_dense_lamb001_tau005_", "tau005"),
+        ("0.1",  "save_pt_dense_lamb001_",        "tau01"),
+        ("0.2",  "save_pt_dense_lamb001_tau02_",  "tau02"),
+        ("0.5",  "save_pt_dense_lamb001_tau05_",  "tau05"),
+        ("1.0",  "save_pt_dense_lamb001_tau1_",   "tau1"),
+    ]
+
+    metric_cols = [
+        ("HR@5",   "recall@5_f"),  ("HR@10",  "recall@10_f"),  ("HR@20",  "recall@20_f"),
+        ("NDCG@5", "ndcg@5_f"),    ("NDCG@10", "ndcg@10_f"),    ("NDCG@20", "ndcg@20_f"),
+        ("ILD@20", "ILD@20"),  ("CC@20", "CC@20"),
+        ("CS@20",  "CS@20"),   ("MaxRun@20", "MaxRun@20"),
+    ]
+    lower_better = {"CS@20", "MaxRun@20"}
+
+    suffix = "_small" if proto == "small" else ""
+
+    rows, missing = [], []
+    for tau, prefix, tag in grid:
+        fpath = os.path.join(SCRIPT_DIR, f"{prefix}{variant}",
+                             f"test_result{suffix}_{tag}.txt")
+        data = parse_dict_result(fpath)
+        if data is None:
+            missing.append(fpath)
+        rows.append((tau, data))
+
+    if missing:
+        print(f"\n⚠  tau_o sweep: MISSING {len(missing)} result files. "
+              f"Run CUDA_VISIBLE_DEVICES=0 bash eval_temp_sweep_firstavg.sh. "
+              f"\n   Example missing: {missing[0]}")
+
+    def fmt(v):
+        return "\\textemdash" if v is None else f"{v:.4f}"
+
+    variant_label = variant.replace("kuairec_", "").replace("_", "-")
+    out_lines = [
+        r"% tau_o prospective-intent temperature sweep (separately trained dense ckpts)",
+        r"% Generated by analyze_results.py --temp_sweep",
+        r"% Variant: " + variant + r"   lambda=" + str(lamb) +
+            r"   lambda_c=" + str(lmd_consec) + r"   proto=" + proto,
+        r"% Each checkpoint is trained AND greedy-decoded with its own tau_o.",
+        r"% CS@20 and MaxRun@20 are lower-is-better.",
+        r"\begin{table*}[t]",
+        r"\centering",
+        r"\small",
+        r"\caption{Sensitivity to the prospective-intent temperature $\tau_o$ "
+            r"of $P_a(j)=\mathrm{softmax}(F w_j/\tau_o)$ on \emph{" + variant_label +
+            r"} (KuaiRec, $\lambda=" + str(lamb) + r"$, $\lambda_c=" + str(lmd_consec) +
+            r"$, " + proto + r"-matrix protocol). Each row is a separately trained "
+            r"dense PACER checkpoint, decoded with its own $\tau_o$; $0.1$ is the "
+            r"original TRIER setting ($1/\tau_o=10$). CS@20 is the mean adjacent-item "
+            r"similarity and MaxRun@20 the longest contiguous run of mutually similar "
+            r"items (both lower is better). Best per metric is \textbf{bold}.}",
+        r"\label{tab:tau_o_sweep}",
+        r"\resizebox{\textwidth}{!}{%",
+        r"\begin{tabular}{l " + "r"*len(metric_cols) + r"}",
+        r"\toprule",
+        r"\textbf{$\tau_o$} & "
+        + " & ".join(r"\textbf{" + mc[0] + r"}" for mc in metric_cols) + r" \\",
+        r"\midrule",
+    ]
+
+    # best (bold) per metric over the present rows
+    best = {}
+    for col_idx, (mc, mkey) in enumerate(metric_cols):
+        vals = [get_metric(data, mkey) for _, data in rows]
+        vals = [v for v in vals if v is not None]
+        if vals:
+            best[col_idx] = min(vals) if mc in lower_better else max(vals)
+    for tau, data in rows:
+        cells = []
+        for col_idx, (mc, mkey) in enumerate(metric_cols):
+            v = get_metric(data, mkey)
+            s = fmt(v)
+            if v is not None and col_idx in best and abs(v - best[col_idx]) < 1e-12:
+                s = r"\textbf{" + s + r"}"
+            cells.append(s)
+        out_lines.append(f"{tau} & " + " & ".join(cells) + r" \\")
+    out_lines += [
+        r"\bottomrule",
+        r"\end{tabular}%",
+        r"}",
+        r"\end{table*}",
+    ]
+
+    table_str = "\n".join(out_lines)
+    if path is None:
+        path = os.path.join(SCRIPT_DIR,
+            f"temp_sweep_{variant.replace('kuairec_','')}_{proto}.tex")
+    with open(path, "w") as f:
+        f.write(table_str + "\n")
+    print(f"tau_o sweep table written: {path}")
+
+    # Console summary
+    print("\n" + "=" * 110)
+    print(f"TAU_o SWEEP (variant={variant}, lambda={lamb}, lambda_c={lmd_consec}, proto={proto})")
+    print("=" * 110)
+    header = f"{'tau_o':>8}  " + " ".join(f"{mc[0]:>10}" for mc in metric_cols)
+    print(header)
+    print("-" * len(header))
+    for tau, data in rows:
+        vals = " ".join(
+            f"{get_metric(data, m):>10.4f}" if get_metric(data, m) is not None
+            else f"{'MISS':>10}" for _, m in metric_cols)
+        print(f"{tau:>8}  {vals}")
+    print("=" * 110)
+
+    return table_str
+
+
+# =============================================================================
 # Main
 # =============================================================================
 def main():
@@ -1098,8 +1244,13 @@ def main():
     parser.add_argument("--gamma_sweep", action="store_true",
                         help="Additionally generate the gamma_o adjacent-order "
                              "training-weight sweep table (reads "
-                             "test_result{,_small}_gridgamma.txt populated by "
+                             "test_result{,_small}_gridorder.txt populated by "
                              "eval_consecgamma_grid_firstavg.sh)")
+    parser.add_argument("--temp_sweep", action="store_true",
+                        help="Additionally generate the tau_o prospective-intent "
+                             "temperature sweep table (reads "
+                             "test_result{,_small}_tau*.txt populated by "
+                             "eval_temp_sweep_firstavg.sh)")
     args = parser.parse_args()
 
     # Collect variant keys for the selected dataset(s)
@@ -1118,7 +1269,8 @@ def main():
                                dense_only=args.dense_only)
     print(f"Found {len(rows)} result files\n")
 
-    if not rows and not (args.sixcell or args.embedding_ablation or args.gamma_sweep):
+    if not rows and not (args.sixcell or args.embedding_ablation
+                         or args.gamma_sweep or args.temp_sweep):
         print(f"No results found for {ds_label}. Run eval scripts first.")
         return
 
@@ -1167,6 +1319,16 @@ def main():
             write_gamma_sweep_tex(
                 variant="kuairec_first_average",
                 lamb=0.01,
+                proto=proto,
+            )
+
+    # --- tau_o prospective-intent temperature sweep ---
+    if args.temp_sweep:
+        for proto in protos:
+            write_temp_sweep_tex(
+                variant="kuairec_first_average",
+                lamb=0.01,
+                lmd_consec=0.01,
                 proto=proto,
             )
 

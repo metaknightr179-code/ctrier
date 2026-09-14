@@ -1,29 +1,34 @@
 #!/bin/bash
 # =============================================================================
-# gamma_consec TRAINING-LOSS-WEIGHT GRID — kuairec_first_average, dense,
+# gamma_o ORDER-LOSS-WEIGHT GRID — kuairec_first_average, dense,
 # fixed lambda = 0.01 (the NDCG@20-selected operating point on First-Average
-# for BOTH families: TRIER_-t 0.1063 and PACER 0.1136, vs a local dip at
-# lambda=0.005; see figures/hparam_sweep_small.tex).
+# for BOTH families).
 #
-# NAMING HISTORY (important):
-#   Before 2026-09-11 the loss weight was the flag -lmd_consec (default .01);
-#   commit a3225a7 RENAMED it to -gamma_consec and gave -lmd_consec to a NEW
-#   inference/score-time cosine penalty. The old lamb0005_consec* checkpoints
-#   therefore sit at lambda=0.005 and are NOT reusable for this grid.
+# IMPORTANT — why this is the SECOND grid (order* dirs, 2026-09-14+):
+#   The first grid (lamb001_consec* dirs) swept -gamma_consec while the model
+#   still used the HARD L_consec. That loss gathers rows of the FROZEN
+#   item2vec table with argmax tokens, so its gradient w.r.t. the logits is
+#   zero (see check_order_gradient.py). Every gamma>0 checkpoint therefore
+#   trained identically — the sweep table had four/five identical rows.
+#   This grid enables the differentiable SOFT loss with -soft_order_loss;
+#   its weight is -lmd_softorder (NOTE: with -soft_order_loss the model
+#   OVERWRITES gamma_consec from lmd_softorder, so -gamma_consec is inert
+#   here and must NOT be used).
 #
-# Grid gamma_consec in {0, 0.001, 0.005, 0.01, 0.05, 0.1} at lambda=0.01:
-#   0     -> save_pt_{notype_}dense_lamb001_consec0_<variant>     (NEW)
-#   0.001 -> save_pt_{notype_}dense_lamb001_consec0001_<variant>  (NEW)
-#   0.005 -> save_pt_{notype_}dense_lamb001_consec0005_<variant>  (NEW)
-#   0.01  -> plain save_pt_{notype_}dense_lamb001_<variant>       (exists;
-#            trained with the default gamma_consec = 0.01)
-#   0.05  -> save_pt_{notype_}dense_lamb001_consec005_<variant>   (NEW)
-#   0.1   -> save_pt_{notype_}dense_lamb001_consec01_<variant>    (NEW)
+# Grid gamma_o in {0, 0.001, 0.005, 0.01, 0.05, 0.1} at lambda=0.01:
+#   0     -> save_pt_{notype_}dense_lamb001_order0_<variant>
+#   0.001 -> save_pt_{notype_}dense_lamb001_order0001_<variant>
+#   0.005 -> save_pt_{notype_}dense_lamb001_order0005_<variant>
+#   0.01  -> save_pt_{notype_}dense_lamb001_order001_<variant>
+#   0.05  -> save_pt_{notype_}dense_lamb001_order005_<variant>
+#   0.1   -> save_pt_{notype_}dense_lamb001_order01_<variant>
 #
-# This script trains the FIVE missing points, type + notype = 10 runs.
-# Everything else is fixed: dense CE, t_mode topk, b=256, lr=1e-3,
-# 1000 epochs, patience 100, frozen RT. The new SCORE penalty
-# (-lmd_consec) is left at its default 0 — it is not part of this sweep.
+# ALL SIX points are freshly trained — the legacy plain lamb001 checkpoint
+# was trained with the hard loss and is NOT a valid gamma_o=0.01 L_order row.
+# type + notype = 12 runs. Everything else is fixed: dense CE, t_mode topk,
+# b=256, lr=1e-3, 1000 epochs, patience 100, frozen RT, soft-order
+# temperature -soft_order_temp 1.0. The SCORE penalty (-lmd_consec) is an
+# inference knob and is left at its default 0 during training.
 #
 # Usage:
 #   nohup bash train_consecgamma_grid_firstavg.sh <GPU_ID> > train_cgamma.log 2>&1 &
@@ -41,18 +46,19 @@ FAMILIES=(
     "notype|notype_|-no_type"
 )
 
-# SUFFIX|gamma_consec  (0.01 needs no training: plain lamb001 dir)
+# SUFFIX|gamma_o (weight of the differentiable L_order via -lmd_softorder)
 CONFIGS=(
-    "consec0|0"
-    "consec0001|0.001"
-    "consec0005|0.005"
-    "consec005|0.05"
-    "consec01|0.1"
+    "order0|0"
+    "order0001|0.001"
+    "order0005|0.005"
+    "order001|0.01"
+    "order005|0.05"
+    "order01|0.1"
 )
 
 echo "############################################################"
-echo "# gamma_consec loss-weight grid at lambda=0.01, GPU ${GPU}"
-echo "# variants: ${VARIANTS[*]}; training 5 missing points x 2 families"
+echo "# gamma_o SOFT L_order weight grid at lambda=0.01, GPU ${GPU}"
+echo "# variants: ${VARIANTS[*]}; training 6 points x 2 families"
 echo "############################################################"
 
 for VAR in "${VARIANTS[@]}"; do
@@ -84,7 +90,7 @@ for FAM in "${FAMILIES[@]}"; do
         rt_dir="save_rt_fix_${VAR}"
 
         echo "============================================================"
-        echo "PT Dense [${FAM_NAME}]: lamb001_${SUFFIX} (gamma_consec=${GAMMA}) / ${VAR}"
+        echo "PT Dense [${FAM_NAME}]: lamb001_${SUFFIX} (gamma_o=${GAMMA}, soft L_order) / ${VAR}"
         echo "-> ${pt_dir}"
         echo "============================================================"
 
@@ -124,10 +130,11 @@ for FAM in "${FAMILIES[@]}"; do
             -m train -e ${MAX_EPOCHS} -b 256 -l 1e-3 \
             -dense -t_mode topk -early_stop -patience 100 -min_delta 0.0001 \
             ${RESUME} ${TYPE_FLAG} \
-            -div -lamb 0.01 -gamma_consec ${GAMMA} \
+            -div -lamb 0.01 \
+            -soft_order_loss -soft_order_temp 1.0 -lmd_softorder ${GAMMA} \
             -i ./${rt_dir} -o ./${pt_dir} 2>&1 | tee "${pt_log}"
     done
   done
 done
 
-echo "gamma_consec GRID TRAINING DONE"
+echo "gamma_o SOFT L_order GRID TRAINING DONE"

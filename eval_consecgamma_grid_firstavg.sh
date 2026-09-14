@@ -1,25 +1,31 @@
 #!/bin/bash
 # =============================================================================
-# gamma_consec GRID EVAL — kuairec_first_average, dense, fixed lambda = 0.01.
-# Runs AFTER train_consecgamma_grid_firstavg.sh.
+# gamma_o GRID EVAL — kuairec_first_average, dense, fixed lambda = 0.01.
+# Runs AFTER train_consecgamma_grid_firstavg.sh (the SOFT L_order grid).
 #
-# Every grid point is a separately TRAINED checkpoint (the loss weight
-# gamma_consec shapes the diverse-token learning signal). All are decoded with
-# the SAME step-wise greedy flags: -div -lamb 0.01, score penalty OFF
-# (-lmd_consec defaults to 0). gamma_consec is a training-only weight and is
-# passed as 0 at eval (inert; matches the existing dense-sweep evals).
+# Every grid point is a separately TRAINED checkpoint that used the
+# differentiable soft order loss gamma_o * L_order (-soft_order_loss,
+# weight -lmd_softorder). All six are decoded with the SAME step-wise greedy
+# flags: -div -lamb 0.01, score penalty OFF (-lmd_consec defaults to 0),
+# gamma_consec passed as 0 at eval (training-only weight, inert at test).
+# The soft-order flags are NOT needed at eval: L_order is a training loss.
+#
+# Unlike the first (invalid) grid eval, NOTHING is reused from the canonical
+# test_result{,_small}.txt files: those legacy files for plain lamb001 were
+# decoded with the old hardcoded lambda_c=0.01 score penalty, which made the
+# gamma=0.01 row incomparable (CS@20 0.0029 vs ~0.108 for the other rows).
+# Every row here gets a fresh identical-flag decode.
 #
 #   gamma   checkpoint
-#   0       save_pt_{notype_}dense_lamb001_consec0_<variant>     (new)
-#   0.001   save_pt_{notype_}dense_lamb001_consec0001_<variant>  (new)
-#   0.005   save_pt_{notype_}dense_lamb001_consec0005_<variant>  (new)
-#   0.01    plain save_pt_{notype_}dense_lamb001_<variant>
-#   0.05    save_pt_{notype_}dense_lamb001_consec005_<variant>   (new)
-#   0.1     save_pt_{notype_}dense_lamb001_consec01_<variant>    (new)
+#   0       save_pt_{notype_}dense_lamb001_order0_<variant>
+#   0.001   save_pt_{notype_}dense_lamb001_order0001_<variant>
+#   0.005   save_pt_{notype_}dense_lamb001_order0005_<variant>
+#   0.01    save_pt_{notype_}dense_lamb001_order001_<variant>
+#   0.05   save_pt_{notype_}dense_lamb001_order005_<variant>
+#   0.1     save_pt_{notype_}dense_lamb001_order01_<variant>
 #
-# Results: test_result_gridgamma{,_small}.txt inside each checkpoint dir.
-# The 0.01 point reuses the canonical dense-sweep files when present.
-# topk is skipped (it bypasses the scorer; gamma is a training-only weight).
+# Results: test_result_gridorder{,_small}.txt inside each checkpoint dir.
+# topk is skipped (it bypasses the scorer; gamma_o is a training-only weight).
 #
 # Usage:
 #   CUDA_VISIBLE_DEVICES=0 bash eval_consecgamma_grid_firstavg.sh
@@ -43,14 +49,14 @@ FAMILIES=(
     "notype|save_pt_notype_dense_|-no_type"
 )
 
-# TAG|gamma|DIR_SUFFIX (plain lamb001 is the gamma=0.01 default-weight model)
+# TAG|gamma|DIR_SUFFIX (all six are soft-L_order checkpoints)
 CONFIGS=(
-    "c0|0|lamb001_consec0"
-    "c0001|0.001|lamb001_consec0001"
-    "c0005|0.005|lamb001_consec0005"
-    "c001|0.01|lamb001"
-    "c005|0.05|lamb001_consec005"
-    "c01|0.1|lamb001_consec01"
+    "o0|0|lamb001_order0"
+    "o0001|0.001|lamb001_order0001"
+    "o0005|0.005|lamb001_order0005"
+    "o001|0.01|lamb001_order001"
+    "o005|0.05|lamb001_order005"
+    "o01|0.1|lamb001_order01"
 )
 
 get_latest_epoch() {
@@ -90,7 +96,7 @@ run_eval () {
 }
 
 echo "############################################################"
-echo "# gamma_consec LOSS-WEIGHT grid eval, ${VAR}, lambda=${LAMB}"
+echo "# gamma_o SOFT L_order grid eval, ${VAR}, lambda=${LAMB}, lambda_c=0"
 echo "############################################################"
 
 for FAM in "${FAMILIES[@]}"; do
@@ -106,25 +112,13 @@ for FAM in "${FAMILIES[@]}"; do
         LATEST=$(get_latest_epoch "${PT_DIR}/model")
         [ -z "$LATEST" ] && { echo "SKIP [${FAM_NAME}/${TAG}]: no checkpoint in ${PT_DIR}"; continue; }
 
-        # gamma=0.01 = plain lamb001: reuse canonical dense-sweep greedy results
-        OUT_BIG="${PT_DIR}/test_result_gridgamma.txt"
-        if [ "$TAG" = "c001" ] && [ -s "${PT_DIR}/test_result.txt" ] && [ ! -s "$OUT_BIG" ]; then
-            cp "${PT_DIR}/test_result.txt" "$OUT_BIG"
-            echo "--- ${FAM_NAME}/c001 big: reuse test_result.txt"
-        else
-            run_eval "$PT_DIR" "$LATEST" "${VAR_DIR}/test-v0.txt" "$NEG_BIG" \
-                     "$TYPE_FLAG" "$OUT_BIG" "cgrid_${FAM_NAME}_${TAG}_big"
-        fi
+        # Every row is freshly decoded with identical flags (no canonical reuse).
+        run_eval "$PT_DIR" "$LATEST" "${VAR_DIR}/test-v0.txt" "$NEG_BIG" \
+                 "$TYPE_FLAG" "${PT_DIR}/test_result_gridorder.txt" "ogrid_${FAM_NAME}_${TAG}_big"
 
-        OUT_SMALL="${PT_DIR}/test_result_small_gridgamma.txt"
         if [ -f "${SMALL_DIR}/test-v0.txt" ]; then
-            if [ "$TAG" = "c001" ] && [ -s "${PT_DIR}/test_result_small.txt" ] && [ ! -s "$OUT_SMALL" ]; then
-                cp "${PT_DIR}/test_result_small.txt" "$OUT_SMALL"
-                echo "--- ${FAM_NAME}/c001 small: reuse test_result_small.txt"
-            else
-                run_eval "$PT_DIR" "$LATEST" "${SMALL_DIR}/test-v0.txt" "$NEG_SMALL" \
-                         "$TYPE_FLAG" "$OUT_SMALL" "cgrid_${FAM_NAME}_${TAG}_small"
-            fi
+            run_eval "$PT_DIR" "$LATEST" "${SMALL_DIR}/test-v0.txt" "$NEG_SMALL" \
+                     "$TYPE_FLAG" "${PT_DIR}/test_result_small_gridorder.txt" "ogrid_${FAM_NAME}_${TAG}_small"
         fi
         echo ""
     done
@@ -138,19 +132,19 @@ import ast, os
 
 var = os.environ.get("CG_VAR", "kuairec_first_average")
 families = [("type", "save_pt_dense_"), ("notype", "save_pt_notype_dense_")]
-grid = [("0", "lamb001_consec0"),
-        ("0.001", "lamb001_consec0001"),
-        ("0.005", "lamb001_consec0005"),
-        ("0.01", "lamb001"),
-        ("0.05", "lamb001_consec005"),
-        ("0.1", "lamb001_consec01")]
+grid = [("0", "lamb001_order0"),
+        ("0.001", "lamb001_order0001"),
+        ("0.005", "lamb001_order0005"),
+        ("0.01", "lamb001_order001"),
+        ("0.05", "lamb001_order005"),
+        ("0.1", "lamb001_order01")]
 keys = ["recall@5_f", "recall@10_f", "recall@20_f",
         "ndcg@5_f", "ndcg@10_f", "ndcg@20_f",
-        "ild@20_f", "cc@20_f", "cs@20_f"]
+        "ild@20_f", "cc@20_f", "cs@20_f", "MaxRun@20"]
 header = f"{'gamma':<9} " + " ".join(f"{k.replace('_f',''):>11}" for k in keys)
 
-for matrix, fn in [("SMALL matrix", "test_result_small_gridgamma.txt"),
-                   ("BIG matrix", "test_result_gridgamma.txt")]:
+for matrix, fn in [("SMALL matrix", "test_result_small_gridorder.txt"),
+                   ("BIG matrix", "test_result_gridorder.txt")]:
     for fam, prefix in families:
         print(f"--- {fam} family, {matrix}")
         print(header)
@@ -166,4 +160,4 @@ for matrix, fn in [("SMALL matrix", "test_result_small_gridgamma.txt"),
         print()
 PY
 
-echo "gamma_consec GRID EVAL DONE"
+echo "gamma_o SOFT L_order GRID EVAL DONE"
