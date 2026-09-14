@@ -291,6 +291,7 @@ def main():
         print(f'ILD@{k}:    {results[f"ILD@{k}"]:.4f}')
         print(f'CS@{k}:     {results[f"CS@{k}"]:.4f}')
         print(f'CC@{k}:     {results[f"CC@{k}"]:.4f}')
+        print(f'MaxRun@{k}: {results[f"MaxRun@{k}"]:.4f}')
 
     # Save results
     with open(args.output, 'w') as f:
@@ -305,6 +306,7 @@ def main():
             f.write(f'ILD@{k}:    {results[f"ILD@{k}"]:.4f}\n')
             f.write(f'CS@{k}:     {results[f"CS@{k}"]:.4f}\n')
             f.write(f'CC@{k}:     {results[f"CC@{k}"]:.4f}\n')
+            f.write(f'MaxRun@{k}: {results[f"MaxRun@{k}"]:.4f}\n')
 
     print(f'\nResults saved to {args.output}')
 

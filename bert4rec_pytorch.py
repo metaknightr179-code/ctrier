@@ -433,6 +433,7 @@ def main():
         print(f'ILD@{k}:    {results[f"ILD@{k}"]:.4f}')
         print(f'CS@{k}:     {results[f"CS@{k}"]:.4f}')
         print(f'CC@{k}:     {results[f"CC@{k}"]:.4f}')
+        print(f'MaxRun@{k}: {results[f"MaxRun@{k}"]:.4f}')
 
     with open(args.output, 'w') as f:
         f.write(f'BERT4Rec Results\n')
@@ -446,6 +447,7 @@ def main():
             f.write(f'ILD@{k}:    {results[f"ILD@{k}"]:.4f}\n')
             f.write(f'CS@{k}:     {results[f"CS@{k}"]:.4f}\n')
             f.write(f'CC@{k}:     {results[f"CC@{k}"]:.4f}\n')
+            f.write(f'MaxRun@{k}: {results[f"MaxRun@{k}"]:.4f}\n')
 
 
 if __name__ == '__main__':

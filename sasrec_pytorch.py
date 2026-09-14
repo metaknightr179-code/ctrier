@@ -379,9 +379,10 @@ def main():
         print(f'ILD@{k}:    {results[f"ILD@{k}"]:.4f}')
         print(f'CS@{k}:     {results[f"CS@{k}"]:.4f}')
         print(f'CC@{k}:     {results[f"CC@{k}"]:.4f}')
+        print(f'MaxRun@{k}: {results[f"MaxRun@{k}"]:.4f}')
 
     # Save results in key:value format — parse_baseline_result in analyze_results.py
-    # matches "Recall/MRR/NDCG/ILD/CS/CC@K: VALUE" lines
+    # matches "Recall/MRR/NDCG/ILD/CS/CC/MaxRun@K: VALUE" lines
     with open(args.output, 'w') as f:
         f.write(f'SASRec Results on {args.test_file}\n')
         f.write(f'Training time: {train_time:.1f}s\n')
@@ -398,6 +399,7 @@ def main():
             f.write(f'ILD@{k}:    {results[f"ILD@{k}"]:.4f}\n')
             f.write(f'CS@{k}:     {results[f"CS@{k}"]:.4f}\n')
             f.write(f'CC@{k}:     {results[f"CC@{k}"]:.4f}\n')
+            f.write(f'MaxRun@{k}: {results[f"MaxRun@{k}"]:.4f}\n')
 
 
 if __name__ == '__main__':

@@ -30,11 +30,17 @@
 # Usage:
 #   CUDA_VISIBLE_DEVICES=0 bash eval_dense_kuairec.sh
 #   nohup bash eval_dense_kuairec.sh > eval_dense_kuairec.log 2>&1 &
+#
+# Force re-evaluation (e.g. to obtain metrics added after the first run,
+# such as MaxRun@k — pre-existing result files are deleted and recomputed):
+#   FORCE_REEVAL=1 CUDA_VISIBLE_DEVICES=0 bash eval_dense_kuairec.sh
+#   FORCE_REEVAL=1 nohup bash eval_dense_kuairec.sh > eval_dense_kuairec.log 2>&1 &
 # =============================================================================
 cd "$(dirname "$0")"
 set -u
 
 GPU=${CUDA_VISIBLE_DEVICES:-0}
+FORCE_REEVAL=${FORCE_REEVAL:-0}
 
 VARIANTS=(
     kuairec_highest_individual
@@ -100,12 +106,16 @@ run_eval () {
     local PT_DIR="$1" LATEST="$2" VAR_DIR="$3" EF="$4" EN="$5" TYPE_FLAG="$6"
     local MODE="$7" RT_DIR="$8" OUT="$9" TAG="${10}" EXTRA_FLAGS="${11:-}"
 
-    # Skip if up-to-date (delete the result file to force re-eval)
+    # Skip if up-to-date (delete the result file or set FORCE_REEVAL=1 to force)
     local NEWER
     NEWER=$(find "${PT_DIR}/model" -name 'duorec-*.pth' -newer "$OUT" 2>/dev/null | head -1)
-    if [ -s "$OUT" ] && [ -z "$NEWER" ]; then
+    if [ "${FORCE_REEVAL}" = "0" ] && [ -s "$OUT" ] && [ -z "$NEWER" ]; then
         echo "--- ${MODE^^} [${TAG}] SKIP (up-to-date: $(basename "$OUT"))"
         return 0
+    fi
+    if [ "${FORCE_REEVAL}" = "1" ] && [ -f "$OUT" ]; then
+        echo "--- ${MODE^^} [${TAG}] FORCE re-eval: deleting $OUT"
+        rm -f "$OUT"
     fi
 
     local STAGE="${STAGE_BASE}/${TAG}"

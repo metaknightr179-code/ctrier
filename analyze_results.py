@@ -436,6 +436,7 @@ def write_latex(rows, path, ds_label="", suffix=""):
     #   Acc. : HR@5/10/20 (= Recall) and ND@5/10/20 (= NDCG)   [higher = better]
     #   Div. : ILD@5/10/20 and CC@5/10/20                      [higher = better]
     #   Sim. : CS@5/10/20 (consecutive similarity — EXTRA ROWS) [lower = better]
+    #   Run. : MaxRun@5/10/20 (longest similar-item run)        [lower = better]
     #
     # Bolding rule: best (max/min) value per (dataset, metric) is \textbf,
     #               second-best is \underline.
@@ -461,12 +462,20 @@ def write_latex(rows, path, ds_label="", suffix=""):
         ("CS@10",  "CS@10"),
         ("CS@20",  "CS@20"),
     ]
+    # Lower is better for MaxRun (longest contiguous run of similar items).
+    RUN_METRICS = [
+        ("MR@5",   "MaxRun@5"),
+        ("MR@10",  "MaxRun@10"),
+        ("MR@20",  "MaxRun@20"),
+    ]
     # Direction: True = higher is better, False = lower is better.
     BEST_HIGHER = True
 
     def direction(metric_name):
         if metric_name.startswith("CS@"):
             return False  # lower similarity = more diverse
+        if metric_name.startswith("MaxRun@") or metric_name.startswith("MR@"):
+            return False  # shorter run = less repetition
         return BEST_HIGHER
 
     def bold_underline(vals_with_key, metric_name):
@@ -520,7 +529,7 @@ def write_latex(rows, path, ds_label="", suffix=""):
         #   highlight[(variant_key, metric_slug)] = {model_key: (bold, underline)}
         highlight = {}
         for vkey in variant_data:
-            all_metrics = ACC_METRICS + DIV_METRICS + SIM_METRICS
+            all_metrics = ACC_METRICS + DIV_METRICS + SIM_METRICS + RUN_METRICS
             for _, metric_slug in all_metrics:
                 inner = variant_data[vkey]  # {model_key: data_dict}
                 vals = {mk: get_metric(mdata, metric_slug)
@@ -539,7 +548,9 @@ def write_latex(rows, path, ds_label="", suffix=""):
                      + proto_caption.get(proto, proto)
                      + r"). Best results are in \textbf{bold}, second-best "
                        r"in \underline{underline}. CS@$K$ = average "
-                       r"consecutive item similarity (lower is more diverse).}")
+                       r"consecutive item similarity (lower is more diverse); "
+                       r"MR@$K$ = MaxRun, longest contiguous run of mutually "
+                       r"similar items (lower is less repetitive).}")
         lines.append(r"\label{tab:results" + suffix + "_" + proto + r"}")
         if wide:
             lines.append(r"\resizebox{\textwidth}{!}{%")
@@ -563,11 +574,12 @@ def write_latex(rows, path, ds_label="", suffix=""):
                 continue
             ds_label_short = vlabel.replace("kuairec_", "").replace("_", "-")
             ds_label_short = ds_label_short.replace("KUAIREC", "KuaiRec")
-            # Metric blocks in order: Acc., Div., Sim.
+            # Metric blocks in order: Acc., Div., Sim., Run.
             blocks = [
                 ("Acc.", ACC_METRICS),
                 ("Div.", DIV_METRICS),
                 ("Sim.", SIM_METRICS),
+                ("Run.", RUN_METRICS),
             ]
             first_line = True
             for block_label, metrics in blocks:
