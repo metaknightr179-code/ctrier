@@ -282,7 +282,8 @@ def evaluate_sasrec(model, test_file, item_num, maxlen=50, device='cuda',
                  'ndcg@5_f', 'ndcg@10_f', 'ndcg@20_f',
                  'ILD@5', 'ILD@10', 'ILD@20',
                  'CS@5', 'CS@10', 'CS@20',
-                 'CC@5', 'CC@10', 'CC@20']:
+                 'CC@5', 'CC@10', 'CC@20',
+                 'MaxRun@5', 'MaxRun@10', 'MaxRun@20']:
         metrics[name] = get_metrics_full(name, total_result)
 
     # Plain (no _f suffix) aliases so both TRIER-style and SASRec-style callers work

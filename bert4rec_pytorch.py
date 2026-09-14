@@ -337,7 +337,8 @@ def evaluate_bert4rec(model, test_file, item_num, maxlen=50, batch_size=256,
             'ndcg@5_f', 'ndcg@10_f', 'ndcg@20_f',
             'ILD@5', 'ILD@10', 'ILD@20',
             'CS@5', 'CS@10', 'CS@20',
-            'CC@5', 'CC@10', 'CC@20']
+            'CC@5', 'CC@10', 'CC@20',
+            'MaxRun@5', 'MaxRun@10', 'MaxRun@20']
     return {k: get_metrics_full(k, total_result) for k in keys}
 
 

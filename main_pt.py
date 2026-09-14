@@ -154,6 +154,11 @@ def metric_all(epoch, total_result, total_rec_set=None, cate_map=None, num_cat=N
     total_result_dict['CC@10'] = get_metrics_full('CC@10', total_result)
     total_result_dict['CC@20'] = get_metrics_full('CC@20', total_result)
 
+    # Calculate MaxRun@k - longest contiguous run of mutually similar items
+    total_result_dict['MaxRun@5'] = get_metrics_full('MaxRun@5', total_result)
+    total_result_dict['MaxRun@10'] = get_metrics_full('MaxRun@10', total_result)
+    total_result_dict['MaxRun@20'] = get_metrics_full('MaxRun@20', total_result)
+
     return total_result_dict
 
 

@@ -46,6 +46,9 @@ def get_metric(epoch, total_result):
     total_result_dict['CC@5'] = get_metrics_full('CC@5', total_result)
     total_result_dict['CC@10'] = get_metrics_full('CC@10', total_result)
     total_result_dict['CC@20'] = get_metrics_full('CC@20', total_result)
+    total_result_dict['MaxRun@5'] = get_metrics_full('MaxRun@5', total_result)
+    total_result_dict['MaxRun@10'] = get_metrics_full('MaxRun@10', total_result)
+    total_result_dict['MaxRun@20'] = get_metrics_full('MaxRun@20', total_result)
     return total_result_dict
 
 
