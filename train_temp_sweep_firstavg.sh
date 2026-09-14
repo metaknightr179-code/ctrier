@@ -11,24 +11,34 @@
 # uses lamb001 = -lamb 0.01; lamb01 would mean -lamb 0.1!) and is reused by
 # the eval script — do not retrain it.
 #
+# Training recipe matches the reused tau_o=0.1 checkpoint: HARD L_consec with
+# the default -gamma_consec 0.01 (its gradient is zero, so this is cosmetic for
+# reproducibility — do NOT add -soft_order_loss here, that would train a
+# different model and make tau=0.1 incomparable), -lamb 0.01.
+#
+# Speed knobs (env overrides):
+#   MAX_EPOCHS=700 PATIENCE=60   ... shorter early stopping (1 GPU, slightly
+#                                  riskier: cells may stop before the reused
+#                                  tau=0.1 model's convergence point)
+#   TEMP_CONFIGS="tau005|0.05 tau02|0.2"  ... run a subset (split across GPUs)
+#
 # Usage:
 #   nohup bash train_temp_sweep_firstavg.sh <GPU_ID> > train_temp_sweep.log 2>&1 &
+#   # two GPUs, ~2x faster:
+#   TEMP_CONFIGS="tau005|0.05 tau02|0.2" nohup bash train_temp_sweep_firstavg.sh 0 > t_a.log 2>&1 &
+#   TEMP_CONFIGS="tau05|0.5 tau1|1.0"    nohup bash train_temp_sweep_firstavg.sh 1 > t_b.log 2>&1 &
 # =============================================================================
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 GPU=${1:-0}
-MAX_EPOCHS=1000
+MAX_EPOCHS=${MAX_EPOCHS:-1000}
+PATIENCE=${PATIENCE:-100}
 VAR=kuairec_first_average
 RT_DIR="save_rt_fix_${VAR}"
 
-# TAG|tau_o
-CONFIGS=(
-    "tau005|0.05"
-    "tau02|0.2"
-    "tau05|0.5"
-    "tau1|1.0"
-)
+# TAG|tau_o (override with TEMP_CONFIGS to run a subset, e.g. across 2 GPUs)
+CONFIGS=( ${TEMP_CONFIGS:-"tau005|0.05 tau02|0.2 tau05|0.5 tau1|1.0"} )
 
 echo "############################################################"
 echo "# tau_o TEMPERATURE SWEEP training, GPU ${GPU}, ${VAR}"
@@ -91,8 +101,8 @@ for CFG in "${CONFIGS[@]}"; do
         -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
         -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
         -m train -e ${MAX_EPOCHS} -b 256 -l 1e-3 \
-        -dense -div -lamb 0.01 -tau_o ${TAU} \
-        -t_mode topk -early_stop -patience 100 -min_delta 0.0001 \
+        -dense -div -lamb 0.01 -gamma_consec 0.01 -tau_o ${TAU} \
+        -t_mode topk -early_stop -patience ${PATIENCE} -min_delta 0.0001 \
         ${RESUME} \
         -i ./${RT_DIR} -o ./${pt_dir} 2>&1 | tee "${pt_log}"
 done

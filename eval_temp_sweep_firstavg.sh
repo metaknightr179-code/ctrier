@@ -16,13 +16,19 @@
 # top-k evals are intentionally skipped: that path bypasses the scorer, so
 # tau_o/lambda_c cannot affect it (the top-k numbers are identical across the sweep).
 #
+# Speed: SMALL_ONLY=1 skips the big-matrix greedy decode (~halves eval time).
+# The sweep table uses the small-matrix protocol; big results can be generated
+# later (checkpoints persist and re-runs skip up-to-date files).
+#
 # Usage:
 #   CUDA_VISIBLE_DEVICES=0 bash eval_temp_sweep_firstavg.sh
+#   CUDA_VISIBLE_DEVICES=0 SMALL_ONLY=1 bash eval_temp_sweep_firstavg.sh
 # =============================================================================
 cd "$(dirname "$0")"
 set -u
 
 GPU=${CUDA_VISIBLE_DEVICES:-0}
+SMALL_ONLY=${SMALL_ONLY:-0}
 VAR=kuairec_first_average
 LAMB=0.01
 
@@ -87,8 +93,10 @@ for CFG in "${CONFIGS[@]}"; do
     LATEST=$(get_latest_epoch "${PT_DIR}/model")
     [ -z "$LATEST" ] && { echo "SKIP [${TAG}]: no checkpoint in ${PT_DIR}"; continue; }
 
-    run_eval "$PT_DIR" "$LATEST" "${VAR_DIR}/test-v0.txt" "$NEG_BIG" \
-             "$TAU" "${PT_DIR}/test_result_${TAG}.txt" "temp_${TAG}_big"
+    if [ "$SMALL_ONLY" = "0" ]; then
+        run_eval "$PT_DIR" "$LATEST" "${VAR_DIR}/test-v0.txt" "$NEG_BIG" \
+                 "$TAU" "${PT_DIR}/test_result_${TAG}.txt" "temp_${TAG}_big"
+    fi
     if [ -f "${SMALL_DIR}/test-v0.txt" ]; then
         run_eval "$PT_DIR" "$LATEST" "${SMALL_DIR}/test-v0.txt" "$NEG_SMALL" \
                  "$TAU" "${PT_DIR}/test_result_small_${TAG}.txt" "temp_${TAG}_small"

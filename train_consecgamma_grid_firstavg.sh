@@ -30,6 +30,14 @@
 # temperature -soft_order_temp 1.0. The SCORE penalty (-lmd_consec) is an
 # inference knob and is left at its default 0 during training.
 #
+# Speed knobs (env overrides):
+#   MAX_EPOCHS=700 PATIENCE=60   ... shorter early stopping
+#   CG_ONLY=type|notype          ... run just one family (2-GPU split below)
+#   CG_CONFIGS="order0|0 order0001|0.001"  ... run a gamma subset only
+# Split the 12 runs over 2 GPUs (type on 0, notype on 1), ~2x faster:
+#   CG_ONLY=type   nohup bash train_consecgamma_grid_firstavg.sh 0 > cg_t.log 2>&1 &
+#   CG_ONLY=notype nohup bash train_consecgamma_grid_firstavg.sh 1 > cg_n.log 2>&1 &
+#
 # Usage:
 #   nohup bash train_consecgamma_grid_firstavg.sh <GPU_ID> > train_cgamma.log 2>&1 &
 # =============================================================================
@@ -37,24 +45,20 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 GPU=${1:-0}
-MAX_EPOCHS=1000
+MAX_EPOCHS=${MAX_EPOCHS:-1000}
+PATIENCE=${PATIENCE:-100}
 VARIANTS=( ${CG_VARIANTS:-kuairec_first_average} )
 
-# FAMILY|DIR_MIDDLE|TYPE_FLAG
-FAMILIES=(
-    "type||"
-    "notype|notype_|-no_type"
-)
+# FAMILY|DIR_MIDDLE|TYPE_FLAG  (CG_ONLY restricts to one family for GPU splitting)
+case "${CG_ONLY:-}" in
+    type)   FAMILIES=( "type||" ) ;;
+    notype) FAMILIES=( "notype|notype_|-no_type" ) ;;
+    *)      FAMILIES=( "type||" "notype|notype_|-no_type" ) ;;
+esac
 
-# SUFFIX|gamma_o (weight of the differentiable L_order via -lmd_softorder)
-CONFIGS=(
-    "order0|0"
-    "order0001|0.001"
-    "order0005|0.005"
-    "order001|0.01"
-    "order005|0.05"
-    "order01|0.1"
-)
+# SUFFIX|gamma_o (weight of the differentiable L_order via -lmd_softorder;
+# override with CG_CONFIGS to run a gamma subset)
+CONFIGS=( ${CG_CONFIGS:-"order0|0 order0001|0.001 order0005|0.005 order001|0.01 order005|0.05 order01|0.1"} )
 
 echo "############################################################"
 echo "# gamma_o SOFT L_order weight grid at lambda=0.01, GPU ${GPU}"
@@ -128,7 +132,7 @@ for FAM in "${FAMILIES[@]}"; do
             -cat ./KuaiRec_variants/${VAR}/kuairec_cate.txt \
             -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
             -m train -e ${MAX_EPOCHS} -b 256 -l 1e-3 \
-            -dense -t_mode topk -early_stop -patience 100 -min_delta 0.0001 \
+            -dense -t_mode topk -early_stop -patience ${PATIENCE} -min_delta 0.0001 \
             ${RESUME} ${TYPE_FLAG} \
             -div -lamb 0.01 \
             -soft_order_loss -soft_order_temp 1.0 -lmd_softorder ${GAMMA} \
