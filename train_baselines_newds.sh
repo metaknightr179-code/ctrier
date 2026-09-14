@@ -4,12 +4,16 @@
 # Usage:  bash train_baselines_newds.sh <GPU_ID> <DATASET>
 #         DATASET in {ML1M, KuaiRand1K, MicroLens}
 #
+# Re-evaluate existing checkpoints (e.g. after adding MaxRun@k), no training:
+#         EVAL_ONLY=1 bash train_baselines_newds.sh <GPU_ID> <DATASET>
+#
 # Protocol mirrors the KuaiRec baselines: 500 epochs, batch 256, lr 1e-3.
 # Results -> baseline_results_<DS>/, checkpoints -> save_sasrec_<DS>/ save_gru4rec_<DS>/
 
 set -u
 GPU=${1:?Usage: train_baselines_newds.sh <GPU_ID> <DATASET>}
 DS=${2:?DATASET must be ML1M, KuaiRand1K or MicroLens}
+EVAL_ONLY=${EVAL_ONLY:-0}
 
 case "$DS" in
   ML1M)
@@ -40,7 +44,19 @@ echo "=============================================="
 
 # ---------------- GRU4Rec ----------------
 GRU_DIR="./save_gru4rec_${DS}"
-if [ -f "${GRU_DIR}/gru4rec_best.pth" ]; then
+if [ "${EVAL_ONLY}" = "1" ]; then
+  if [ ! -f "${GRU_DIR}/gru4rec_best.pth" ]; then
+    echo "[GRU4Rec] EVAL_ONLY: no checkpoint in ${GRU_DIR} - skip"
+  else
+    echo "[GRU4Rec] eval-only..."
+    python3 gru4rec_pytorch.py \
+      --eval_only --ckpt_dir "${GRU_DIR}" \
+      --test_file "${DIR}/test-v0.txt" \
+      --item_num ${N} --batch_size ${BATCH} --maxlen 50 \
+      --cat "${DIR}/${CATE}" --n_cat ${NCAT} --vec "${DIR}/${VEC}" \
+      --output "${OUT_DIR}/gru4rec_results.txt" 2>&1 | tee "eval_gru4rec_${DS}.log"
+  fi
+elif [ -f "${GRU_DIR}/gru4rec_best.pth" ]; then
   echo "[GRU4Rec] checkpoint exists - skipping training"
 else
   echo "[GRU4Rec] training..."
@@ -58,7 +74,19 @@ fi
 
 # ---------------- SASRec ----------------
 SAS_DIR="./save_sasrec_${DS}"
-if [ -f "${SAS_DIR}/sasrec_best.pth" ]; then
+if [ "${EVAL_ONLY}" = "1" ]; then
+  if [ ! -f "${SAS_DIR}/sasrec_best.pth" ]; then
+    echo "[SASRec] EVAL_ONLY: no checkpoint in ${SAS_DIR} - skip"
+  else
+    echo "[SASRec] eval-only..."
+    python3 sasrec_pytorch.py \
+      --eval_only --ckpt_dir "${SAS_DIR}" \
+      --test_file "${DIR}/test-v0.txt" \
+      --item_num ${N} --batch_size ${BATCH} --maxlen 50 \
+      --cat "${DIR}/${CATE}" --n_cat ${NCAT} --vec "${DIR}/${VEC}" \
+      --output "${OUT_DIR}/sasrec_results.txt" 2>&1 | tee "eval_sasrec_${DS}.log"
+  fi
+elif [ -f "${SAS_DIR}/sasrec_best.pth" ]; then
   echo "[SASRec] checkpoint exists - skipping training"
 else
   echo "[SASRec] training..."
