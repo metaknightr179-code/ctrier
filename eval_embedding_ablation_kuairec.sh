@@ -4,8 +4,8 @@
 # at the single lambda=0.01 operating point, KuaiRec dense checkpoints.
 #
 # The 8 cells of the ablation (two baselines come from the dense sweep):
-#   notype      (no side info)            save_pt_notype_dense_lamb01_<variant>
-#   type        (type only)               save_pt_dense_lamb01_<variant>
+#   notype      (no side info)            save_pt_notype_dense_lamb001_<variant>
+#   type        (type only)               save_pt_dense_lamb001_<variant>
 #   author      (notype + author)         save_pt_author_fixrt_lamb01_<variant>
 #   music       (notype + music)          save_pt_music_fixrt_lamb01_<variant>
 #   authormusic (notype + author + music) save_pt_authormusic_fixrt_lamb01_<variant>
@@ -55,8 +55,8 @@ MUSIC_EXTRA="-music_file ./KuaiRec_variants/kuairec_music.txt -n_music 8494"
 
 # NAME|PT_DIR_PREFIX|TYPE_FLAG|EXTRA_FLAGS  (empty TYPE_FLAG = type ON)
 FAMILIES=(
-    "notype|save_pt_notype_dense_lamb01|-no_type|"
-    "type|save_pt_dense_lamb01||"
+    "notype|save_pt_notype_dense_lamb001|-no_type|"
+    "type|save_pt_dense_lamb001||"
     "author|save_pt_author_fixrt_lamb01|-no_type|${AUTHOR_EXTRA}"
     "music|save_pt_music_fixrt_lamb01|-no_type|${MUSIC_EXTRA}"
     "authormusic|save_pt_authormusic_fixrt_lamb01|-no_type|${AUTHOR_EXTRA} ${MUSIC_EXTRA}"
