@@ -57,8 +57,14 @@ case "${CG_ONLY:-}" in
 esac
 
 # SUFFIX|gamma_o (weight of the differentiable L_order via -lmd_softorder;
-# override with CG_CONFIGS to run a gamma subset)
-CONFIGS=( ${CG_CONFIGS:-"order0|0 order0001|0.001 order0005|0.005 order001|0.01 order005|0.05 order01|0.1"} )
+# override with CG_CONFIGS to run a gamma subset). Explicit if/else: a quoted
+# default inside ${CG_CONFIGS:-"..."} stays one element and breaks the loop.
+if [ -n "${CG_CONFIGS:-}" ]; then
+    CONFIGS=( $CG_CONFIGS )
+else
+    CONFIGS=( "order0|0" "order0001|0.001" "order0005|0.005"
+              "order001|0.01" "order005|0.05" "order01|0.1" )
+fi
 
 echo "############################################################"
 echo "# gamma_o SOFT L_order weight grid at lambda=0.01, GPU ${GPU}"

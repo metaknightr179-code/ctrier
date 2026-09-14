@@ -37,8 +37,14 @@ PATIENCE=${PATIENCE:-100}
 VAR=kuairec_first_average
 RT_DIR="save_rt_fix_${VAR}"
 
-# TAG|tau_o (override with TEMP_CONFIGS to run a subset, e.g. across 2 GPUs)
-CONFIGS=( ${TEMP_CONFIGS:-"tau005|0.05 tau02|0.2 tau05|0.5 tau1|1.0"} )
+# TAG|tau_o (override with TEMP_CONFIGS to run a subset, e.g. across 2 GPUs).
+# NOTE: do NOT quote the default inside ${TEMP_CONFIGS:-"..."} — bash would
+# keep it as a single array element and pass "0.05 tau02|0.2 ..." to -tau_o.
+if [ -n "${TEMP_CONFIGS:-}" ]; then
+    CONFIGS=( $TEMP_CONFIGS )
+else
+    CONFIGS=( "tau005|0.05" "tau02|0.2" "tau05|0.5" "tau1|1.0" )
+fi
 
 echo "############################################################"
 echo "# tau_o TEMPERATURE SWEEP training, GPU ${GPU}, ${VAR}"
