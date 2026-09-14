@@ -31,7 +31,41 @@ KuaiRand-1K & 995   & 20,000 & 44 & 547,659        & 550.4 \\
 For all datasets, items are re-indexed to $1,\ldots,|\mathcal{I}|$ with $0$ reserved for padding, and interactions are grouped by user and sorted chronologically. The three additional datasets use the same leave-one-out split and 50-item truncation as the KuaiRec variants.
 
 \subsubsection{Evaluation Protocol}
-We evaluate all models by ranking the held-out item against the \emph{entire item set} without sampled negatives, avoiding the inconsistencies of sampled metrics~\cite{krichene2020sampled}. We report accuracy metrics Recall@$k$ (Hit Ratio), NDCG@$k$, and MRR@$k$; diversity metrics Intra-List Distance (ILD@$k$)~\cite{ziegler2005} and Category Coverage (CC@$k$)~\cite{adomavicius2012}; and the Consecutive Similarity (CS@$k$) of adjacent list items, for $k\in\{5,10,20\}$. ILD is the average pairwise Euclidean distance between L2-normalized item vectors, CC the fraction of categories covered by the list, and CS the average cosine similarity between items at consecutive positions (lower CS means locally less repetitive lists). Crucially, ILD and CS are measured for \emph{all} models in the same frozen, pretrained content-embedding space (the dataset-specific category/item2vec vectors released with the data), so cross-model diversity numbers are directly comparable.
+We evaluate all models by ranking the held-out item against the \emph{entire item set} without sampled negatives, avoiding the inconsistencies of sampled metrics~\cite{krichene2020sampled}. We report accuracy metrics Recall@$k$ (Hit Ratio), NDCG@$k$, and MRR@$k$; diversity metrics Intra-List Distance (ILD@$k$)~\cite{ziegler2005} and Category Coverage (CC@$k$)~\cite{adomavicius2012}; and repetition-sensitive metrics Consecutive Similarity (CS@$k$) and MaxRun@$k$, for $k\in\{5,10,20\}$.
+
+\noindent\textbf{ILD@$k$} is the average pairwise Euclidean distance between L2-normalized item category vectors:
+\begin{equation}
+\text{ILD@}k(R) = \frac{1}{k(k-1)}\sum_{s=1}^{k}\sum_{\substack{t=1\\t\neq s}}^{k}
+                  \bigl\|\mathbf{c}_{j_s} - \mathbf{c}_{j_t}\bigr\|_2.
+\end{equation}
+
+\noindent\textbf{CC@$k$} is the fraction of distinct categories covered by list $R$:
+\begin{equation}
+\text{CC@}k(R) = \frac{\bigl|\bigcup_{s=1}^{k} \mathcal{T}(j_s)\bigr|}{C},
+\end{equation}
+where $C$ is the total number of categories in the dataset.
+
+\noindent\textbf{CS@$k$} is the average cosine similarity between items at consecutive positions (lower CS means locally less repetitive lists):
+\begin{equation}
+\text{CS@}k(R) = \frac{1}{k-1}\sum_{s=2}^{k} \cos(\mathbf{v}_{j_s}, \mathbf{v}_{j_{s-1}}).
+\end{equation}
+
+\noindent\textbf{MaxRun@$k$} measures the longest contiguous segment of items that are mutually similar (same category \emph{or} high content-vector cosine), capturing the worst-case repetition streak where CS only reports the average. Let
+\begin{equation}
+a_s = \begin{cases}
+  1 & \text{if } \mathcal{T}(j_s)\cap\mathcal{T}(j_{s-1})\neq\emptyset \;\text{or}\;
+      \cos(\mathbf{v}_{j_s},\mathbf{v}_{j_{s-1}}) > \tau_{\text{run}},\\
+  0 & \text{otherwise},
+\end{cases}
+\end{equation}
+with $\tau_{\text{run}}=0.7$ throughout; then
+\begin{equation}
+\text{MaxRun@}k(R) = 1 + \max_{\text{subarray } i,\dots,j} \sum_{s=i+1}^{j} a_s,
+\quad 1 \leq i < j \leq k,
+\end{equation}
+i.e., one plus the largest sum of $a_s$ over any contiguous window (a run of $L$ similar items contributes $L-1$ ones). A list with no adjacent similarities has MaxRun$=1$; a list where every adjacent pair is similar has MaxRun$=k$.
+
+Crucially, ILD, CS, and MaxRun are measured for \emph{all} models in the same frozen, pretrained content-embedding space (the dataset-specific category/item2vec vectors released with the data), so cross-model diversity numbers are directly comparable.
 
 \subsubsection{Model Configuration}
 To evaluate all models, we adopted the widely used leave-one-out protocol for sequential recommendation: for each user, we used the last item as the test item, the second-to-last item for validation, and the remaining items for training. As discussed above, evaluating with sampled negatives can introduce inconsistencies compared with non-sampled counterparts~\cite{krichene2020sampled}; we therefore evaluated every method on the entire item set without sampling, using identical splits across models. We implemented all models in PyTorch and set the hyper-parameters of each baseline according to the suggestions provided in its original paper, reporting the performance of each baseline under its optimal settings.
@@ -50,4 +84,4 @@ We compare with representative sequential recommendation methods, grouped into (
 \end{itemize}
 
 \subsubsection{Ablation Variants}
-To disentangle the contributions of PACER's components, we additionally report: (i)~\textbf{PT-no-consec}, which keeps the intent-coverage loss ($\lambda=0.1$) but disables the consecutive-similarity penalty ($\lambda_c=0$), testing whether local position-aware smoothing is needed on top of global intent coverage; (ii)~\textbf{PACER-full}, with both losses enabled at $\lambda=0.1$, $\lambda_c=0.01$; and (iii)~\textbf{RT-only}, the retrospective model evaluated alone for next-item prediction, assessing the standalone value of reverse trajectory modeling.
+To disentangle the contributions of PACER's components, we additionally report: (i)~\textbf{PT-no-ord}, which keeps the intent-coverage loss ($\lambda=0.1$) and the inference-time position-aware penalty ($\lambda_c=0.01$) but disables the soft adjacent-order training loss ($\gamma_o=0$), isolating the contribution of differentiable local-order supervision; (ii)~\textbf{PACER-full}, with all three diversity components enabled at $\lambda=0.1$, $\gamma_o=0.01$, $\lambda_c=0.01$; and (iii)~\textbf{RT-only}, the retrospective model evaluated alone for next-item prediction, assessing the standalone value of reverse trajectory modeling.

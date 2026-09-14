@@ -188,17 +188,27 @@ The diversity loss compares the diversity achieved by the diverse path (driven b
 \end{equation}
 When the diverse path produces a meaningfully more diverse list ($\text{ILD}(R^{div}) > \text{ILD}(R^{greedy})$) and the probability gap is not catastrophically large, $\mathcal{L}_{div}$ is negative (a ``reward'') and backpropagation encourages this behavior. Conversely, when the diverse path collapses into the greedy path (difference near zero) or is trained so aggressively that relevance degrades excessively, the loss becomes positive (a ``penalty'') and the gradient steers the model back toward relevance.
 
-In addition to the overall ILD-based loss, we optionally add a \emph{consecutive similarity} loss that discourages near-duplicate adjacent items in the generated list:
+In addition to the list-level ILD-based loss, we introduce a \emph{soft adjacent-order} loss that penalizes the model for producing high-similarity neighboring list positions. Crucially, this loss is computed from the \emph{soft item distributions} at adjacent decoder positions rather than from hard argmax tokens, making it fully differentiable through the score function. Let $Q_s \in \mathbb{R}^{|\mathcal{I}|}$ be the decoder logits at position $s$, and $\tau_o > 0$ an order-temperature hyperparameter. The soft distribution over items is
 \begin{equation}
-\mathcal{L}_{consec} = \frac{1}{k-1} \sum_{s=2}^{k} \max\bigl(0, \cos(\mathbf{c}_{j_s}, \mathbf{c}_{j_{s-1}}) - 0.5\bigr),
+\pi_s(j) = \frac{\exp\!\bigl(Q_s(j)/\tau_o\bigr)}{\sum_{j' \in \mathcal{I}} \exp\!\bigl(Q_s(j')/\tau_o\bigr)}.
 \end{equation}
-where $0.5$ is a margin and $\cos(\cdot,\cdot)$ denotes cosine similarity between multi-hot category vectors. The consecutive loss is weighted by $\lambda_{consec}=0.01$ by default and can be ablated via a dedicated flag.
+Let $\mathbf{v}_j$ be the L2-normalized content embedding of item $j$. The \emph{expected item vector} at position $s$ is
+\begin{equation}
+\bar{\mathbf{v}}_s = \sum_{j \in \mathcal{I}} \pi_s(j)\,\mathbf{v}_j,
+\end{equation}
+which gives a continuous, differentiable summary of what position $s$ is ``softly predicting''. The adjacent-order loss then applies a cosine-margin penalty between consecutive expected vectors:
+\begin{equation}
+\label{eq:order_loss}
+\mathcal{L}_{order} = \frac{1}{k-1}\sum_{s=2}^{k} \max\!\Bigl(0,\; \cos(\bar{\mathbf{v}}_s,\bar{\mathbf{v}}_{s-1}) - m\Bigr),
+\end{equation}
+where $m \in [0,1)$ is a similarity margin (default $m=0.5$). Unlike the hard-token consecutive penalty of prior work, every gradient flows through both $\pi_s$ and $\pi_{s-1}$, so $\mathcal{L}_{order}$ directly shapes the decoder's probability mass at neighbouring positions before any argmax is taken. We weight it by $\gamma_o$ (default $0.01$) and ablate via a dedicated flag. The inference-time score penalty $-\lambda_c C_s(j)$ of Eq.~\ref{eq:gen_score} remains a \emph{separate} mechanism: it is applied after decoding to tune local repetition at deployment time without retraining.
 
 The final training objective of the PT module is the sum of four terms:
 \begin{equation}
-\mathcal{L} = \mathcal{L}_{ce} + \mathcal{L}_{nce} + \mathcal{L}_{div} + \lambda_{consec} \cdot \mathcal{L}_{consec},
+\label{eq:total_obj}
+\mathcal{L} = \mathcal{L}_{ce} + \mathcal{L}_{nce} + \mathcal{L}_{div} + \gamma_o\,\mathcal{L}_{order},
 \end{equation}
-where $\mathcal{L}_{ce}$ is the dense multi-position next-item cross-entropy loss of Eq.~\ref{eq:dense_ce} (reducing to terminal-only supervision when dense supervision is disabled). The coefficient $\lambda$ is not a weight on this objective: $\mathcal{L}_{div}$ enters at unit strength for every model trained with the diversity path. Instead $\lambda$ enters the decoder of Eq.~\ref{eq:gen_score} at both training and inference, selecting which diverse sequence the unit-weight loss is evaluated on; checkpoints trained at different $\lambda$ are therefore distinct models, while the score-time coefficient $\lambda_c$ can be varied at inference without retraining.
+where $\mathcal{L}_{ce}$ is the dense multi-position next-item cross-entropy loss of Eq.~\ref{eq:dense_ce} (reducing to terminal-only supervision when dense supervision is disabled). The coefficient $\lambda$ is not a weight on this objective: $\mathcal{L}_{div}$ and $\mathcal{L}_{order}$ enter at unit strength (modulo $\gamma_o$ for the latter) for every model trained with the diversity path. Instead $\lambda$ enters the decoder of Eq.~\ref{eq:gen_score} at both training and inference, selecting which diverse sequence the unit-weight losses are evaluated on; checkpoints trained at different $\lambda$ are therefore distinct models, while the score-time coefficient $\lambda_c$ can be varied at inference without retraining.
 
 \subsection{Type-Enriched Item Representations}
 \label{sec:type_embeddings}
