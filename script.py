@@ -84,6 +84,7 @@ def get_args():
     parser.add_argument('-n_dur', type=int, default=0, help='number of duration buckets (embedding table size = n_dur+1); required with -dur_file')
     parser.add_argument('-no_mask', action='store_true', help='disable causal mask in PT encoder (ablation: bidirectional encoder)')
     parser.add_argument('-dense', action='store_true', help='enable dense multi-position supervision (CE loss at every position, not just last)')
+    parser.add_argument('-seed', type=int, default=0, help='random seed for reproducibility; controls init_seeds (random/np/torch) + dataloader shuffle + CUDA deterministic mode')
 
     args = parser.parse_args()
 

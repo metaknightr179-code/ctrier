@@ -307,8 +307,11 @@ if __name__ == '__main__':
         param.requires_grad = False
     rt_model.eval()
     
-    # Set random seed for reproducibility
-    init_seeds()
+    # Set random seed for reproducibility (controlled by -seed; default 0).
+    # cuda_deterministic=False keeps TF32/AMP/cudnn.benchmark enabled — we only
+    # need different random inits + dataloader shuffle across seeds, not exact
+    # bit-equivalence, and cudnn.deterministic=True would halve 4090 throughput.
+    init_seeds(getattr(args, 'seed', 0), cuda_deterministic=False)
 
 
     # --------------------------
