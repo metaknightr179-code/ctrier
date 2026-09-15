@@ -19,7 +19,14 @@ import torch
 import torch.utils.data as Data
 import torch.optim as optim
 from torch import nn
-from torch.cuda.amp import autocast, GradScaler
+# torch.amp (PT ≥ 2.1) replaced torch.cuda.amp (PT ≤ 2.0) — accept either so
+# this same code path runs on the remote box and the local CPU dev machine.
+try:
+    from torch.amp import autocast, GradScaler
+    _amp_device = 'cuda'
+except ImportError:                  # torch 2.0 or older
+    from torch.cuda.amp import autocast, GradScaler
+    _amp_device = None
 
 # Add current directory to path for module imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -379,7 +386,10 @@ if __name__ == '__main__':
         # numerically sensitive ops (softmax, log). Loss values/gradients are
         # numerically identical to fp32; only the compute speed changes.
         use_amp = bool(torch.cuda.is_available()) and not bool(os.environ.get('NO_AMP'))
-        scaler = GradScaler(enabled=use_amp)
+        # New torch.amp.GradScaler('cuda', enabled=...) API passes device string;
+        # old torch.cuda.amp.GradScaler takes no device arg. Fallback via kwargs.
+        _scaler_kw = {'device': _amp_device} if _amp_device else {}
+        scaler = GradScaler(enabled=use_amp, **_scaler_kw)
         if use_amp:
             print('[AMP] fp16 autocast + GradScaler enabled; override NO_AMP=1 to disable')
         
@@ -426,7 +436,9 @@ if __name__ == '__main__':
 
                 # AMP autocast wraps the entire forward + loss chain. GradScaler
                 # protects against fp16 underflow on backward.
-                with autocast(enabled=use_amp):
+                # New torch.amp.autocast('cuda', enabled=...) vs old no-device API.
+                _a_kw = {'device_type': _amp_device} if _amp_device else {}
+                with autocast(enabled=use_amp, **_a_kw):
                     # Forward pass: get model outputs and loss components
                     output, nce_loss, div_loss, consec_loss = model.train_forward(
                         input_session_ids, sem_aug_input_session_ids,
