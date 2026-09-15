@@ -21,7 +21,7 @@ VAR=kuairec_first_average
 LAMB=0.01; LMD_ON=${SIXCELL_LMD:-0.01}
 DIR=./KuaiRec_variants/${VAR}
 RT_OUT=save_rt_fix_${VAR}
-SEEDS=${SEEDS:-"1 2 3"}
+SEEDS=${SEEDS:-"1 2"}
 OUTDIR=./sixcell_firstavg_3seed
 mkdir -p ${OUTDIR}/staging ${OUTDIR}/stats
 
