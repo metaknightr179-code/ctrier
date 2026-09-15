@@ -152,11 +152,18 @@ ax.xaxis.set_major_formatter(mticker.FuncFormatter(cs_fmt))
 # Also enable minor ticks between the power-of-2 majors
 ax.xaxis.set_minor_locator(mticker.NullLocator())  # clean — no clutter
 
-# y-axis: tight
+# y-axis: LOG scale too — NDCG@20 spans ~0.067 to ~0.127 (1.9× range).
+# Use log with custom ticks chosen to fit the tight range cleanly.
+# Round-number ticks so they're readable (0.06, 0.08, 0.10, 0.12).
+_y_tick_vals = [0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.11, 0.12, 0.14]
+ax.set_yscale("log")
+ax.set_yticks(_y_tick_vals)
+ax.set_yticklabels([f"{v:.2f}" for v in _y_tick_vals])
+
+# y-limits — include a bit of padding
 y_lo = min([p[1] for fam in ORDER for p in FAMILIES[fam]])
 y_hi = max([p[1] for fam in ORDER for p in FAMILIES[fam]])
-y_margin = (y_hi - y_lo) * 0.10
-ax.set_ylim(y_lo - y_margin, y_hi + y_margin)
+ax.set_ylim(y_lo * 0.95, y_hi * 1.05)
 
 ax.grid(True, linestyle=":", alpha=0.4, zorder=0, which="major")
 ax.tick_params(axis="both", which="major", pad=1)
