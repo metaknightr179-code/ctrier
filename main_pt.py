@@ -415,7 +415,7 @@ if __name__ == '__main__':
 
                 # Move data to GPU if available (non_blocking=True overlaps
                 # with GPU compute when paired with pin_memory on the loader).
-                _nb = num_workers > 0 and torch.cuda.is_available()
+                _nb = _nw > 0 and torch.cuda.is_available()
                 if torch.cuda.is_available():
                     input_session_ids = input_session_ids.cuda(non_blocking=_nb)
                     targets = targets.cuda(non_blocking=_nb)
