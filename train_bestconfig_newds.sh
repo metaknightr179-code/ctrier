@@ -30,6 +30,11 @@ set -u
 GPU=${1:?Usage: train_bestconfig_newds.sh <GPU_ID> <DATASET>}
 DS=${2:?DATASET must be one of: ML1M KuaiRand1K MicroLens kuairec_first_average kuairec_first_individual kuairec_highest_average kuairec_highest_individual}
 
+# Early-stop / epoch budget (env-overridable; shorter = faster but riskier)
+MAX_EPOCHS=${MAX_EPOCHS:-300}
+PATIENCE=${PATIENCE:-30}
+MIN_DELTA=${MIN_DELTA:-0.0001}
+
 case "$DS" in
   # --- New datasets (own vocab/cat counts, own vec file inside DIR) ---
   ML1M)       N=3126;  NCAT=18; DIR=./ML1M;       CATE=ml1m_cate.txt;       VEC=./ML1M/ml1m_vec.npy;        NEG="ML1M-random-sample_size=99-seed=4444.txt" ;;
@@ -64,7 +69,7 @@ echo "[Guard] all data files present"
 
 # ---------------- Stage 1: RT ----------------
 lines=$(wc -l < "${RT_OUT}/train_result.txt" 2>/dev/null); lines=${lines:-0}
-if [ -f "${RT_OUT}/DONE" ] || [ "$lines" -ge 1000 ]; then
+if [ -f "${RT_OUT}/DONE" ] || [ "$lines" -ge "${MAX_EPOCHS}" ]; then
   echo "[RT] ${RT_OUT} already complete (epoch ${lines}) — skipping"
 else
   echo "[RT] training ${RT_OUT}"
@@ -74,15 +79,15 @@ else
       -tf ${DIR}/train-v0.txt -vf ${DIR}/valid-v0.txt -ef ${DIR}/test-v0.txt \
       -vn ${DIR}/${NEG} -en ${DIR}/${NEG} \
       -cat ${DIR}/${CATE} \
-      -n ${N} -n_cat ${NCAT} -e 1000 -b 256 -l 1e-3 \
-      -reg -t_mode topk -early_stop -patience 100 -min_delta 0.0001 \
+      -n ${N} -n_cat ${NCAT} -e ${MAX_EPOCHS} -b 256 -l 1e-3 \
+      -reg -t_mode topk -early_stop -patience ${PATIENCE} -min_delta ${MIN_DELTA} \
       ${RESUME} -o ${RT_OUT} 2>&1 | tee rt_best_${DS}.log
   touch "${RT_OUT}/DONE"
 fi
 
 # ---------------- Stage 2: PT (γ=0, no L_order) ----------------
 done_lines=$(wc -l < "${PT_OUT}/train_result.txt" 2>/dev/null); done_lines=${done_lines:-0}
-if [ -f "${PT_OUT}/DONE" ] || [ -f "${PT_OUT}/test_result.txt" ] || [ "$done_lines" -ge 1000 ]; then
+if [ -f "${PT_OUT}/DONE" ] || [ -f "${PT_OUT}/test_result.txt" ] || [ "$done_lines" -ge "${MAX_EPOCHS}" ]; then
   echo "[PT] ${PT_OUT} already complete (DONE / epoch ${done_lines}) — skipping"
   exit 0
 fi
@@ -110,9 +115,9 @@ CUDA_VISIBLE_DEVICES=${GPU} python3 main_pt.py \
     -tf ${DIR}/train-v0.txt -vf ${DIR}/valid-v0.txt -ef ${DIR}/test-v0.txt \
     -vn ${DIR}/${NEG} -en ${DIR}/${NEG} \
     -cat ${DIR}/${CATE} -vec ${VEC} \
-    -n ${N} -n_cat ${NCAT} -m train -e 1000 -b 256 -l 1e-3 \
+    -n ${N} -n_cat ${NCAT} -m train -e ${MAX_EPOCHS} -b 256 -l 1e-3 \
     -dense -div -lamb 0.01 \
-    -t_mode topk -early_stop -patience 100 -min_delta 0.0001 \
+    -t_mode topk -early_stop -patience ${PATIENCE} -min_delta ${MIN_DELTA} \
     ${RESUME} -i ./${RT_OUT} -o ./${PT_OUT} 2>&1 | tee pt_best_${DS}.log
 
 echo "[PT] ${PT_OUT} finished"
