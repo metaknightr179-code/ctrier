@@ -202,3 +202,5 @@ for matrix, g in [("SMALL matrix", grid_small), ("BIG matrix", grid)]:
 PY
 
 echo "lambda_c HARD INFERENCE PENALTY SWEEP DONE"
+echo "LaTeX table: python3 analyze_results.py --penalty_sweep --proto small"
+echo "             -> penalty_sweep_first_average_small.tex"

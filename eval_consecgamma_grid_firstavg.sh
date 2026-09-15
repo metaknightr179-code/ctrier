@@ -173,7 +173,7 @@ else:
             ("0.1", "lamb001_order01")]
 keys = ["recall@5_f", "recall@10_f", "recall@20_f",
         "ndcg@5_f", "ndcg@10_f", "ndcg@20_f",
-        "ild@20_f", "cc@20_f", "cs@20_f", "MaxRun@20"]
+        "ILD@20", "CC@20", "CS@20", "MaxRun@20"]
 header = f"{'gamma':<9} " + " ".join(f"{k.replace('_f',''):>11}" for k in keys)
 
 for matrix, fn in [("SMALL matrix", "test_result_small_gridorder.txt"),
