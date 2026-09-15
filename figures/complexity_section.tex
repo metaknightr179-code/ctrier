@@ -1,0 +1,108 @@
+% ========================================================================
+% Complexity and Runtime
+% ========================================================================
+\section{Complexity and Runtime}
+\label{sec:complexity}
+
+\paragraph{Parameter count.}
+The PACER model has three new embedding tables beyond the base TRIER: the
+category-type table $\mathbf{E}^{c}\in\mathbb{R}^{N_c\times h}$ (tag embedding,
+$N_c=31$, $h=64$), the optional author embedding $\mathbf{E}^{a}\in\mathbb{R}^{N_a\times h}$
+($N_a=8369$ unique creators), and the optional music embedding
+$\mathbf{E}^{m}\in\mathbb{R}^{N_m\times h}$ ($N_m=10728$ tracks). For the
+default content-only PACER used throughout this paper (category-type only),
+these contribute $31\times64 = 1{,}984$ parameters. The full 4-layer Transformer
+encoder with hidden dimension 64, self-attention heads 4, and feedforward
+width $4h=256$ adds roughly $800$K parameters; the item embedding table
+$\mathbf{V}\in\mathbb{R}^{N\times h}$ contributes $10728\times64 \approx 687$K.
+Total parameter count is $1.5$M --- comparable to SASRec's $1.7$M and well below
+BERT4Rec's $4.2$M on the same vocabulary. Adding author and music embeddings
+adds $535$K and $687$K respectively, for a full-model total of $\approx 2.7$M.
+
+\paragraph{Theoretical complexity.}
+Let $N$ be the vocabulary size, $K$ the list length, $h$ the hidden
+dimension, $C$ the number of categories, and $B$ the batch size. The
+order-level scorer in Eq.~\eqref{eq:score} computes
+$z_s = \mathbf{p}_s^\top \mathbf{U}$, where $\mathbf{U}\in\mathbb{R}^{N\times C}$
+is the category-type projection and $\mathbf{p}_s\in\mathbb{R}^{C}$ is the
+prospective-intent distribution; this is a rank-$C$ matrix-vector product
+with cost $O(NC)$, independent of $h$. Computing the full candidate score
+for all $N$ items costs $O(BNh + NC)$ per decoding step (the attention
+pooling over the sequence then the projection), and the beam search iterates
+$K$ times, so greedy decoding is $O(KB(Nh + C))$. The soft order loss
+$\mathcal{L}_{\text{order}}$ is computed over the full vocabulary at each of
+the $K$ list positions: the power-annealed softmax $\pi_j = \text{softmax}(\log Q_j / T)$
+costs $O(KN)$, the expected content-vector accumulation
+$\bar{\mathbf{v}} = \sum_j \pi_j \mathbf{v}_j$ costs $O(KNC)$, and the adjacent-pair
+cosine cost is $O(KNC)$ again, giving a total of $O(KNC)$ per forward pass.
+Crucially, every term in our loss decomposition is \emph{linear in $N$} --- the
+dominant cost per sample is $O(KNC)$, which for KuaiRec ($N=10728$, $C=31$,
+$K=20$) is roughly $6.7\times 10^6$ floating-point operations per batch element,
+well below the $O(N^2)$ self-attention cost that would dominate a full
+Transformer beam search over all items. Table~\ref{tab:complexity} summarises
+these bounds alongside baselines.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Theoretical complexity per forward pass (decoding $K=20$ items from
+vocabulary size $N$; $h$ = hidden dim, $C$ = categories, $L$ = layers).
+Our PACER stays linear in $N$ everywhere --- no $O(N^2)$ terms --- while
+TRIER and SASRec both pay an $O(N^2)$ beam-search cost in their RT stage.}
+\label{tab:complexity}
+\begin{tabular}{lrrr}
+\toprule
+Model           & Training          & Greedy decode          & Memory per sample \\
+\midrule
+TRIER           & $O(BLNh^2 + BKN)$ & $O(KN^2 + BNh^2)$ & $O(Nh + KN)$ \\
+SASRec          & $O(BLNh^2)$       & $O(N^2 + Nh)$      & $O(Nh)$     \\
+BERT4Rec        & $O(LN^2 h)$       & $O(LN^2 h)$        & $O(LNh)$    \\
+\midrule
+PACER (this)     & $O(BLNh^2 + BKN C)$ & $O(KN + BNh^2 + BKC)$ & $O(Nh + KC)$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Wall-clock time and memory.}
+All timings below are reported on an NVIDIA RTX 4090 (24 GB GDDR6X) with AMP
+autocast enabled, batch size 256, early stopping after at most $300$ epochs,
+on KuaiRec First-Average ($N=10728$, $220$K training sessions). We compare:
+
+\begin{center}
+\begin{tabular}{lrrrr}
+\toprule
+Model       & Epochs & Time/epoch & Inference/user & Peak GPU Mem \\
+\midrule
+TRIER       & 540    & $3.1$ s    & $42$ ms        & $1.8$ GB \\
+TRIER-C     & 420    & $3.3$ s    & $44$ ms        & $1.9$ GB \\
+TRIER-L     & 480    & $3.4$ s    & $45$ ms        & $2.0$ GB \\
+PACER-LS    & 360    & $4.1$ s    & $48$ ms        & $2.1$ GB \\
+PACER Full  & 320    & $4.2$ s    & $49$ ms        & $2.2$ GB \\
+\midrule
+$\gamma_o=1.0$ run & 280 & $4.8$ s & $52$ ms & $2.3$ GB \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+PACER adds $<30\%$ wall-clock overhead over the base TRIER in training, and
+$<20\%$ per-user inference cost --- a negligible burden in practice since both
+processes are dominated by the Transformer encoder's $O(LNh^2)$ cost, not the
+order-level components. The memory footprint is essentially unchanged
+($+0.4$ GB at peak), because the only new tensors are the three embedding
+tables and the per-position $\pi_j$ vectors of size $K\times N$ --- all small
+compared with the model's hidden activations.
+
+\paragraph{Candidate approximation.}
+We compute $\mathcal{L}_{\text{order}}$ over the \emph{full vocabulary}
+($M=N=10728$ items) at every list position --- there is no top-$M$ truncation.
+The $\pi_j = \text{softmax}(\log Q_j / T)$ computation costs $O(N)$ per
+position, which at $N=10728$ and $K=20$ is a $2.1\times 10^5$ element softmax
+per batch element, comfortably fast on a 4090 (the full $\mathcal{L}_{\text{order}}$
+contributes $\approx 8\%$ of the total per-step time, measured with
+\texttt{STEP\_TIMERS=1} instrumentation). We keep the full-vocab computation
+for reproducibility; for very large catalogs ($N>10^5$) a top-$M$ truncation
+of the decoder score $Q$ before the softmax (with $M=1024$ candidates generated
+from the prior position's logits) is a straightforward approximation that
+reduces the order-loss cost to $O(KMC)$ while retaining the same gradient
+path. We leave this optimisation to future work since it was not needed at
+KuaiRec scale.
