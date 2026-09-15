@@ -89,10 +89,21 @@ CONFIG_LABELS = {
     "lamb001": "$\\lambda$=0.01",
     "lamb005": "$\\lambda$=0.05",
     "lamb01": "$\\lambda$=0.1",
+    # Singleton cross-dataset PACER checkpoints (γ=0, no L_order training)
+    "lamb001_order0": "PACER",
+    # γ_o sweep checkpoints — show explicit gamma value
+    "lamb001_softo0001": "PACER-$\\gamma_o$=0.001",
+    "lamb001_softo0005": "PACER-$\\gamma_o$=0.005",
+    "lamb001_softo001": "PACER-$\\gamma_o$=0.01",
+    "lamb001_softo005": "PACER-$\\gamma_o$=0.05",
+    "lamb001_softo01": "PACER-$\\gamma_o$=0.1",
 }
 CONFIG_ORDER = ["nodiv", "lamb0002", "lamb0005", "lamb0005_consec0001",
                 "lamb0005_consec005", "lamb0005_consec01",
-                "lamb001", "lamb005", "lamb01"]
+                "lamb001", "lamb001_order0",
+                "lamb001_softo0001", "lamb001_softo0005",
+                "lamb001_softo001", "lamb001_softo005", "lamb001_softo01",
+                "lamb005", "lamb01"]
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -207,42 +218,65 @@ def collect_all_results(proto_filter=None, variant_keys=None, dense_only=False):
 
     # ---- TRIER / DuoRec dict-literal result files ----
     # Filenames:
-    #   test_result.txt             big matrix;  duorec=topk, TRIER dirs=greedy
-    #   test_result_small.txt       small matrix; duorec=topk, TRIER dirs=greedy
-    #   test_result_topk.txt        big matrix;  topk full-catalog ranking
-    #   test_result_topk_small.txt  small matrix; topk full-catalog ranking
+    #   test_result.txt / test_result_gridorder.txt          big matrix; greedy
+    #   test_result_small.txt / test_result_small_gridorder.txt  small matrix; greedy
+    #   test_result_topk.txt / test_result_topk_small.txt    topk full-catalog
+    #   test_result_greedy_small_bw*.txt / test_result_greedy_bw*.txt  beam sweeps
+    #
+    # When multiple matching files exist in one dir (e.g. test_result.txt from
+    # an old eval + test_result_gridorder.txt from eval_singletons.sh), pick
+    # the newest (highest mtime) per (dirname, proto) so the most recent
+    # evaluation is authoritative.
+    per_dir_proto = {}  # (dirname, proto) -> best path (newest mtime)
     for path in sorted(glob.glob(os.path.join(SCRIPT_DIR, "save_*", "test_result*.txt"))):
         dirname = os.path.basename(os.path.dirname(path))
         if dense_only and not is_dense_dir(dirname):
             continue
         basename = os.path.basename(path)
-        if basename == "test_result.txt":
-            proto, fname_infer = "big", None
-        elif basename == "test_result_small.txt":
-            proto, fname_infer = "small", None
-        elif basename == "test_result_topk.txt":
-            proto, fname_infer = "big", "topk"
-        elif basename == "test_result_topk_small.txt":
-            proto, fname_infer = "small", "topk"
-        elif basename.startswith("test_result_greedy_small_bw"):
-            # beam-sweep small: test_result_greedy_small_bw10_k10.txt etc.
-            proto = "small"
-            fname_infer = basename.replace("test_result_greedy_small_", "").replace(".txt", "")
-        elif basename.startswith("test_result_greedy_bw"):
-            # beam-sweep big: test_result_greedy_bw10_k10.txt etc.
+        if basename in ("test_result.txt", "test_result_gridorder.txt",
+                        "test_result_greedy.txt", "test_result_greedy_gridorder.txt"):
             proto = "big"
-            fname_infer = basename.replace("test_result_greedy_", "").replace(".txt", "")
+        elif basename in ("test_result_small.txt", "test_result_small_gridorder.txt",
+                          "test_result_greedy_small.txt", "test_result_greedy_small_gridorder.txt"):
+            proto = "small"
+        elif basename in ("test_result_topk.txt",):
+            proto = "big"
+        elif basename in ("test_result_topk_small.txt",):
+            proto = "small"
+        elif basename.startswith("test_result_greedy_small_bw"):
+            proto = "small"
+        elif basename.startswith("test_result_greedy_bw"):
+            proto = "big"
         else:
-            continue  # ignore test_result_500.txt etc.
+            continue
         if proto_filter and proto != proto_filter:
             continue
+        # Newest mtime wins
+        key = (dirname, proto)
+        if key not in per_dir_proto or os.path.getmtime(path) > os.path.getmtime(per_dir_proto[key]):
+            per_dir_proto[key] = path
+
+    # Now process only the winning (newest) file per (dir, proto)
+    for (dirname, proto), path in per_dir_proto.items():
         parsed = split_dir_name(dirname, variant_keys)
         if parsed is None:
             continue
         family, config, variant = parsed
-        # inference mode: explicit from filename, else duorec is topk, TRIER greedy
-        # beam-sweep files carry their beam label (e.g. "bw10_k10") as infer
+
+        # Determine infer mode from basename (not strictly needed since we already
+        # resolved proto above, but keep for completeness)
+        basename = os.path.basename(path)
+        fname_infer = None
+        if basename == "test_result_topk.txt":
+            fname_infer = "topk"
+        elif basename == "test_result_topk_small.txt":
+            fname_infer = "topk"
+        elif basename.startswith("test_result_greedy_small_bw"):
+            fname_infer = basename.replace("test_result_greedy_small_", "").replace(".txt", "")
+        elif basename.startswith("test_result_greedy_bw"):
+            fname_infer = basename.replace("test_result_greedy_", "").replace(".txt", "")
         infer = fname_infer or ("topk" if family == "duorec" else "greedy")
+
         data = parse_dict_result(path)
         if data is None:
             continue
