@@ -156,6 +156,27 @@ class TRIER_PT(nn.Module):
         self.nce_fct = nn.CrossEntropyLoss(reduction='mean')      # NCE loss function
         self.KL_loss = nn.KLDivLoss()                             # KL divergence loss
 
+        # STEP_TIMERS=1: wall-clock section profiling per training step
+        # (synchronizes the GPU, so it slightly slows training; off by
+        # default). main_pt.py places the marks and prints the means.
+        self._timer_on = bool(os.environ.get("STEP_TIMERS"))
+        self._timer_acc = {}
+        self._timer_last = None
+        self._timer_t0 = None
+
+    def _tmark(self, name):
+        """Open a named timing interval; the previous interval is closed and
+        accumulated into self._timer_acc. No-op unless STEP_TIMERS=1."""
+        if not self._timer_on:
+            return
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        now = time.time()
+        if self._timer_last is not None:
+            self._timer_acc[self._timer_last] = self._timer_acc.get(self._timer_last, 0.0) + (now - self._timer_t0)
+        self._timer_last = name
+        self._timer_t0 = now
+
 
     # --------------------------
     # METHOD: set_item_types
