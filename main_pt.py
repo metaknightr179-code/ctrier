@@ -19,6 +19,7 @@ import torch
 import torch.utils.data as Data
 import torch.optim as optim
 from torch import nn
+from torch.cuda.amp import autocast, GradScaler
 
 # Add current directory to path for module imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -321,7 +322,11 @@ if __name__ == '__main__':
         
         # Create training dataset and data loader
         dataset = TrainPTDataset(train_file, item_num, max_seqs_len, modified_max_seqs_len)
-        dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+        # pin_memory=True + num_workers>0 let H2D copies overlap with GPU
+        # compute (batch N+1 is prepared while batch N is running).
+        _nw = int(os.environ.get('NUM_WORKERS', '2')) if torch.cuda.is_available() else 0
+        dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=True,
+                                     num_workers=_nw, pin_memory=_nw > 0)
         
         # Create PT model instance
         model = TRIER_PT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args)
@@ -370,6 +375,14 @@ if __name__ == '__main__':
         # Create optimizer (Adam)
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
         
+        # AMP gradient scaler — autocast + scaler = fp16 matmul with fp32 for
+        # numerically sensitive ops (softmax, log). Loss values/gradients are
+        # numerically identical to fp32; only the compute speed changes.
+        use_amp = bool(torch.cuda.is_available()) and not bool(os.environ.get('NO_AMP'))
+        scaler = GradScaler(enabled=use_amp)
+        if use_amp:
+            print('[AMP] fp16 autocast + GradScaler enabled; override NO_AMP=1 to disable')
+        
         # Early stopping tracking
         best_loss = float('inf')
         patience_counter = 0
@@ -400,38 +413,41 @@ if __name__ == '__main__':
                 # Unpack batch data (6 fields: includes dense_targets when -dense flag is set)
                 input_session_ids, targets, negatives, sem_aug_input_session_ids, input_reverse_ids, dense_targets = batch
 
-                # Move data to GPU if available
+                # Move data to GPU if available (non_blocking=True overlaps
+                # with GPU compute when paired with pin_memory on the loader).
+                _nb = num_workers > 0 and torch.cuda.is_available()
                 if torch.cuda.is_available():
-                    input_session_ids = input_session_ids.cuda()
-                    targets = targets.cuda()
-                    negatives = negatives.cuda()
-                    sem_aug_input_session_ids = sem_aug_input_session_ids.cuda()
-                    input_reverse_ids = input_reverse_ids.cuda()
-                    dense_targets = dense_targets.cuda()
+                    input_session_ids = input_session_ids.cuda(non_blocking=_nb)
+                    targets = targets.cuda(non_blocking=_nb)
+                    negatives = negatives.cuda(non_blocking=_nb)
+                    sem_aug_input_session_ids = sem_aug_input_session_ids.cuda(non_blocking=_nb)
+                    input_reverse_ids = input_reverse_ids.cuda(non_blocking=_nb)
+                    dense_targets = dense_targets.cuda(non_blocking=_nb)
 
-                # Forward pass: get model outputs and loss components
-                # (train_forward marks enc_main/fwd_RT_beam/generate_by_score/
-                #  diversity_loss/order_loss/nce_loss on the same timer chain)
-                output, nce_loss, div_loss, consec_loss = model.train_forward(input_session_ids, sem_aug_input_session_ids,
-                                            input_reverse_ids, rt_model, item2vec)
+                # AMP autocast wraps the entire forward + loss chain. GradScaler
+                # protects against fp16 underflow on backward.
+                with autocast(enabled=use_amp):
+                    # Forward pass: get model outputs and loss components
+                    output, nce_loss, div_loss, consec_loss = model.train_forward(
+                        input_session_ids, sem_aug_input_session_ids,
+                        input_reverse_ids, rt_model, item2vec)
 
-                # Calculate total loss (reconstruction + NCE + diversity + consecutive similarity)
-                # Pass dense_targets only when -dense flag is active
-                dt = dense_targets if getattr(args, 'dense', False) else None
-                model._tmark('rec_loss')
-                loss, main_loss = model.rec_loss(output, targets, nce_loss, div_loss, consec_loss, dense_targets=dt)
+                    # Calculate total loss
+                    dt = dense_targets if getattr(args, 'dense', False) else None
+                    model._tmark('rec_loss')
+                    loss, main_loss = model.rec_loss(
+                        output, targets, nce_loss, div_loss, consec_loss, dense_targets=dt)
 
                 # Skip batch if loss is NaN or Inf (numerical instability)
                 if torch.isnan(loss) or torch.isinf(loss):
                     print(f"NaN/Inf loss detected at step {step}, skipping", flush=True)
                     continue
 
-                # Backward pass: compute gradients
+                # Backward pass under the scaler so AMP gradients don't underflow.
                 model._tmark('backward+step')
-                loss.backward()
-
-                # Update model weights
-                optimizer.step()
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
 
                 # Accumulate losses for logging
                 loss_avg += loss
@@ -518,7 +534,7 @@ if __name__ == '__main__':
         
         # Create validation dataset and data loader
         dataset = TestDataset(valid_file, valid_neg_file, item_num, max_seqs_len, modified_max_seqs_len)
-        dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+        dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=2)
 
         # Create PT model instance
         model = TRIER_PT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args)
@@ -645,7 +661,7 @@ if __name__ == '__main__':
         
         # Create test dataset and data loader
         dataset = TestDataset(test_file, test_neg_file, item_num, max_seqs_len, modified_max_seqs_len)
-        dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+        dataloader = Data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=2)
 
         # Create PT model instance
         model = TRIER_PT(item_num, layer_num, head_num, hidden_unit, dropout_rate, batch_size, args)
