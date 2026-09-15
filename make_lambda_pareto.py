@@ -22,6 +22,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+import math
 from matplotlib.patches import FancyArrowPatch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -129,28 +130,10 @@ for fam in ORDER:
 ax.set_xlabel("CS@20  (mean adjacent cosine, ↓ better)", labelpad=3)
 ax.set_ylabel("NDCG@20  (↑ better)", labelpad=3)
 
-# LOG2 x-axis with ticks that ×2 each time, equally spaced on visual axis.
-# Ticks: base × 2^k for k = 0..N → [0.0001, 0.0002, 0.0004, 0.0008, ...]
-import math
-BASE = 0.0001            # 1e-4 — the smallest meaningful CS
-MAX_CS = 0.17            # max CS in our data (TRIER-C λ=0)
-k_max = int(math.ceil(math.log(MAX_CS / BASE, 2))) + 1   # number of doublings
-true_ticks = [BASE * (2 ** k) for k in range(k_max + 1)]
-# e.g. [0.0001, 0.0002, 0.0004, 0.0008, 0.0016, 0.0032, 0.0064, 0.0128, 0.0256, 0.0512, 0.1024]
-
-ax.set_xscale("log", base=2)
-ax.set_xlim(true_ticks[0] * 0.7, true_ticks[-1] * 1.2)
-
-# Set explicit tick positions + "0" label for the first one
-ax.set_xticks(true_ticks)
-def cs_fmt(val, pos):
-    if val <= BASE * 1.1:
-        return "0"
-    # show as decimal (not scientific) for readability
-    return f"{val:.4f}".rstrip("0").rstrip(".")
-ax.xaxis.set_major_formatter(mticker.FuncFormatter(cs_fmt))
-# Also enable minor ticks between the power-of-2 majors
-ax.xaxis.set_minor_locator(mticker.NullLocator())  # clean — no clutter
+# X-axis: linear, tight on data range
+x_all = [p[2] for fam in ORDER for p in FAMILIES[fam]]
+ax.set_xlim(-0.005, max(x_all) * 1.08)
+ax.set_xticks([0, 0.02, 0.04, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16])
 
 # y-axis: LOG2 too — same power-of-2 tick pattern as x-axis
 # Find a BASE that produces round-number ticks covering NDCG range ~0.067–0.127.
