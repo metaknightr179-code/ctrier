@@ -1479,13 +1479,16 @@ def write_penalty_sweep_tex(variant="kuairec_first_average", lamb=0.01,
     """Generate the lambda_c inference-penalty sweep LaTeX table.
 
     Reads test_result{,_small}_pen<tag>.txt produced by
-    eval_penalty_sweep_firstavg.sh: the SAME dense checkpoints
-    (save_pt_{notype_}dense_lamb001_<variant>, trained at lambda=0.01) are
-    re-decoded step-wise greedy while sweeping ONLY the inference-time hard
-    adjacent penalty -lmd_consec:
+    eval_penalty_sweep_firstavg.sh. Each row re-decodes the SAME
+    dense checkpoint with a different inference-time hard adjacent
+    penalty -lmd_consec:
         score(j) = (1-lambda) rel + lambda div - lambda_c cos(v_{j-1}, v_j).
-    lambda_c is distinct from gamma_o (the TRAINING L_order weight, passed 0
-    here). The lambda_c=0 row reuses the canonical test_result files.
+
+    IMPORTANT: this sweep is run on checkpoints THAT WERE TRAINED WITH
+    gamma_o L_order (suffix softo001) — not on gamma_o=0 checkpoints.
+    lambda_c is specifically designed to fix the "frustrated regime"
+    (accuracy peaks but repetition worsens) that appears at gamma_o=0.01.
+    Running on gamma_o=0 checkpoints produces a meaningless table.
 
       lambda_c  result file tag
       0         test_result{,_small}.txt           (canonical)
@@ -1495,12 +1498,11 @@ def write_penalty_sweep_tex(variant="kuairec_first_average", lamb=0.01,
       0.05      test_result{,_small}_pen005.txt
       0.1       test_result{,_small}_pen01.txt
 
-    Two family panels (type = PACER, notype = TRIER_-t); best per metric
-    within each panel is bold (lower for CS/MaxRun).
+    Two family panels: PACER-Full (content + L_order) and PACER-LS (no content + L_order).
     """
     families = [
-        ("PACER",            "save_pt_dense_lamb001_"),
-        (r"TRIER$_{-t}$",    "save_pt_notype_dense_lamb001_"),
+        ("PACER-Full",   "save_pt_dense_lamb001_softo001_"),
+        ("PACER-LS",     "save_pt_notype_dense_lamb001_softo001_"),
     ]
     # (lambda_c display, file tag; "" = canonical penalty-off file)
     grid = [

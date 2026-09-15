@@ -45,14 +45,31 @@ RT_DIR="./save_rt_fix_${VAR}"
 NEG_BIG="${VAR_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt"
 NEG_SMALL="${SMALL_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt"
 
-# FAMILY_NAME|DIR_PREFIX|TYPE_FLAG  (dense lamb001 = genuinely trained at lambda=0.01)
+# FAMILY_NAME|DIR_PREFIX|TYPE_FLAG
+#
+# NOTE: lambda_c λ_c is the inference-time hard consecutive penalty. It is
+# specifically designed to FIX the "frustrated regime" that appears when
+# γ_o L_order is trained at 0.01 (accuracy peaks but repetition worsens —
+# see Figures/tau_s_bars + gamma_o_bars in the paper). Therefore the sweep
+# MUST run on checkpoints that WERE trained with L_order at γ_o=0.01 —
+# i.e. the softo001 suffix. Running on the γ=0 (no-L_order) checkpoints
+# produces a meaningless sweep: those checkpoints have no frustrated regime
+# to fix, so λ_c looks like a random knob rather than the targeted fix it is.
+#
+#   save_pt_dense_lamb001_softo001_*          → PACER-Full (content + L_order trained, no type flag)
+#   save_pt_notype_dense_lamb001_softo001_*   → PACER-LS  (no content, L_order trained, -no_type)
+#
+# If you need the γ=0 comparison (is λ_c useful even WITHOUT L_order?), run
+# PEN_FAMILIES='type|save_pt_dense_lamb001|
+# notype|save_pt_notype_dense_lamb001|-no_type' \
+#   bash eval_penalty_sweep_firstavg.sh
 if [ -n "${PEN_FAMILIES:-}" ]; then
     FAMILIES=()
     while IFS= read -r line; do [ -n "$line" ] && FAMILIES+=("$line"); done <<< "$PEN_FAMILIES"
 else
     FAMILIES=(
-        "type|save_pt_dense_lamb001|"
-        "notype|save_pt_notype_dense_lamb001|-no_type"
+        "PACER-Full|save_pt_dense_lamb001_softo001|"
+        "PACER-LS|save_pt_notype_dense_lamb001_softo001|-no_type"
     )
 fi
 
@@ -157,12 +174,19 @@ done
 echo "############################################################"
 echo "# SUMMARY"
 echo "############################################################"
-PEN_VAR="$VAR" python3 - <<'PY'
-import ast, os
+# Build families env var as "NAME:PREFIX:TYPEFLAG|NAME:PREFIX:TYPEFLAG|..."
+PEN_FAM="${FAMILIES[*]}"
+PEN_VAR="$VAR" PEN_FAM="$PEN_FAM" python3 - <<'PY'
+import ast, os, re
 
 var = os.environ.get("PEN_VAR", "kuairec_first_average")
-families = [("type", "save_pt_dense_lamb001"),
-            ("notype", "save_pt_notype_dense_lamb001")]
+fam_raw = os.environ.get("PEN_FAM", "")  # space-joined NAME|PREFIX|TYPEFLAG entries
+families = []
+for entry in fam_raw.split():
+    parts = entry.split('|')
+    if len(parts) >= 2:
+        families.append((parts[0], parts[1]))
+
 grid = [("0", "test_result.txt"),
         ("0.001", "test_result_pen0001.txt"),
         ("0.005", "test_result_pen0005.txt"),
@@ -181,9 +205,9 @@ keys = ["recall@5_f", "recall@10_f", "recall@20_f",
 header = f"{'lambda_c':<9} " + " ".join(f"{k.replace('_f',''):>11}" for k in keys)
 
 for matrix, g in [("SMALL matrix", grid_small), ("BIG matrix", grid)]:
-    for fam, prefix in families:
+    for fam_name, prefix in families:
         d = f"{prefix}_{var}"
-        print(f"--- {fam} family, {matrix} ({d})")
+        print(f"--- {fam_name}, {matrix} ({d})")
         print(header)
         for lc, fn in g:
             path = os.path.join(d, fn)
