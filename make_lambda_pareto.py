@@ -103,8 +103,17 @@ plt.rcParams.update({
 
 ORDER = ["TRIER", "TRIER-C", "TRIER-L", "PACER-Full"]
 
+# Descriptive labels for the legend — match six-cell ablation nomenclature
+# so a reader familiar with the paper recognizes each curve instantly.
+LEGEND_LABELS = {
+    "TRIER":      r"TRIER (no content, $\gamma_o$=0)",
+    "TRIER-C":    r"TRIER-C (+content, $\gamma_o$=0)",
+    "TRIER-L":    r"TRIER-L (no content, $\gamma_o$=0.01)",
+    "PACER-Full": r"PACER-Full (+content, $\gamma_o$=0.01)",
+}
+
 fig, ax = plt.subplots(1, 1, figsize=(6.2, 3.8))
-fig.subplots_adjust(left=0.13, right=0.95, top=0.70, bottom=0.18)
+fig.subplots_adjust(left=0.13, right=0.95, top=0.62, bottom=0.18)
 
 # KEY INSIGHT: each family's baseline NDCG at λ=0 differs dramatically
 # (TRIER-L ≈ 0.067, TRIER ≈ 0.097, PACER-Full ≈ 0.127), so plotting absolute
@@ -123,7 +132,7 @@ for fam in ORDER:
 
     ax.plot(xs, ys, color=color, lw=0.85, alpha=0.60, zorder=3)
     ax.scatter(xs, ys, s=14, c=color, zorder=5, edgecolor="white",
-               linewidths=0.3, label=fam)
+               linewidths=0.3, label=LEGEND_LABELS[fam])
 
     if len(xs) >= 2:
         i = len(xs) - 2
@@ -177,10 +186,12 @@ for spine in ["top", "right"]:
     ax.spines[spine].set_visible(False)
 
 # ── Legend + direction hint + title ─────────────────────────────────────
-leg = fig.legend(labels=ORDER, loc="upper center",
-                 bbox_to_anchor=(0.5, 0.975),
-                 ncol=4, frameon=False, fontsize=7,
-                 handlelength=1.2, handletextpad=0.5, columnspacing=1.5)
+# Use ax.legend (not fig.legend) so it automatically picks up the
+# label=LEGEND_LABELS[fam] we set on each scatter call.
+leg = ax.legend(loc="upper center",
+                bbox_to_anchor=(0.5, 1.38),
+                ncol=2, frameon=False, fontsize=6,
+                handlelength=1.5, handletextpad=0.5, columnspacing=1.2)
 
 from matplotlib.patches import FancyArrowPatch
 arrow = FancyArrowPatch((0.02, 0.90), (0.08, 0.90),
