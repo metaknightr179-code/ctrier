@@ -101,8 +101,10 @@ plt.rcParams.update({
 
 ORDER = ["TRIER", "TRIER-C", "TRIER-L", "PACER-Full"]
 
-fig, ax = plt.subplots(1, 1, figsize=(5.5, 3.6))
-fig.subplots_adjust(left=0.12, right=0.95, top=0.82, bottom=0.16)
+# Wider figure + generous top margin so legend/caption don't collide
+fig, ax = plt.subplots(1, 1, figsize=(6.2, 3.8))
+# top=0.70 leaves 30% of figure height for legend + arrow hint + title above the plot
+fig.subplots_adjust(left=0.13, right=0.95, top=0.70, bottom=0.18)
 
 # We'll collect x/y limits across all families for tight shared axes
 all_xs, all_ys = [], []
@@ -116,7 +118,7 @@ for fam in ORDER:
     hl = PANEL_HIGHLIGHT[fam]
 
     # thin line connecting all points (lower zorder than points)
-    ax.plot(xs, ys, color=color, lw=0.8, alpha=0.55, zorder=3)
+    ax.plot(xs, ys, color=color, lw=0.85, alpha=0.60, zorder=3)
 
     # small filled circles
     ax.scatter(xs, ys, s=14, c=color, zorder=5, edgecolor="white",
@@ -133,45 +135,61 @@ for fam in ORDER:
     ax.scatter([xs[0]], [ys[0]], s=22, c="none", zorder=6,
                edgecolors=hl, linewidths=0.8)
 
-# Axes
-ax.set_xlabel("CS@20 (↓ better)", labelpad=3)
-ax.set_ylabel("NDCG@20 (↑ better)", labelpad=3)
+# ── Axes ────────────────────────────────────────────────────────────────────
+ax.set_xlabel("CS@20  (mean adjacent cosine, ↓ better)", labelpad=3)
+ax.set_ylabel("NDCG@20  (↑ better)", labelpad=3)
 
-# Tight shared limits with CS=0 visible at left edge
+# symlog x-axis: linear for |CS| < 0.01, log beyond.
+# This spreads out the dense cluster at CS ∈ [0, 0.02] while still showing
+# the λ=0 points at CS ≈ 0.08–0.17 cleanly on the same axis.
+import matplotlib.ticker as mticker
+ax.set_xscale("symlog", linthresh=0.01, linscale=0.6)
+ax.set_xlim(-0.002, max(all_xs) * 1.25)
+
+# y-axis: tight
 y_lo, y_hi = min(all_ys), max(all_ys)
 y_margin = (y_hi - y_lo) * 0.10
 ax.set_ylim(y_lo - y_margin, y_hi + y_margin)
 
-x_hi = max(all_xs) * 1.10
-ax.set_xlim(-0.005, x_hi if x_hi > 0 else 0.02)
+# custom x-ticks — show clean labels across the symlog break
+ax.set_xticks([0, 0.001, 0.005, 0.01, 0.05, 0.1])
+ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.3g"))
 
-# grid
-ax.grid(True, linestyle=":", alpha=0.4, zorder=0)
+# grid — both major + minor so symlog looks intentional
+ax.grid(True, linestyle=":", alpha=0.4, zorder=0, which="both")
 ax.tick_params(axis="both", which="major", pad=1)
+ax.tick_params(axis="x", which="minor", length=1.5)
 
 # spines
 for spine in ["top", "right"]:
     ax.spines[spine].set_visible(False)
 
-# Legend: outside panel, centered above, no frame, tiny font
-ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.28),
-          ncol=4, frameon=False, fontsize=6, handletextpad=0.5,
-          columnspacing=1.2)
+# ── Legend + direction hint + title — stacked, non-overlapping ──────────
+# Plot area uses top=0.70 of figure height. Everything above that is
+# figure-level annotation in the empty band [0.70, 1.00].
 
-# Arrow direction hint (gray figure-text annotation)
+# 1. Legend: flat row right at top of the empty band
+#    We use fig.legend (not ax.legend) so it sits in figure coords cleanly.
+leg = fig.legend(labels=ORDER, loc="upper center",
+                 bbox_to_anchor=(0.5, 0.975),
+                 ncol=4, frameon=False, fontsize=7,
+                 handlelength=1.2, handletextpad=0.5, columnspacing=1.5)
+
+# 2. Arrow direction hint — below legend, still well above plot
 from matplotlib.patches import FancyArrowPatch
-arrow = FancyArrowPatch((0.02, 0.93), (0.07, 0.93),
-                         transform=ax.transAxes,
+# Use figure fraction coords so it stays aligned regardless of plot layout
+arrow = FancyArrowPatch((0.02, 0.90), (0.08, 0.90),
+                         transform=fig.transFigure,
                          arrowstyle="-|>", color="gray", lw=0.9,
-                         mutation_scale=8)
-ax.add_patch(arrow)
-ax.text(0.085, 0.925, "λ_c ↑", fontsize=5.5, color="gray", style="italic",
-        transform=ax.transAxes, va="center")
+                         mutation_scale=9, figure=fig)
+fig.patches.append(arrow)
+fig.text(0.095, 0.895, "λ_c increases  →", fontsize=6, color="gray",
+         va="center", style="italic")
 
-# Super title
-fig.text(0.5, 0.97,
-         "Pareto frontier: NDCG@20 vs CS@20 under varying inference-time penalty λ_c",
-         ha="center", fontsize=6.5, style="italic")
+# 3. Super title — below the arrow hint, clearly separated
+fig.text(0.5, 0.855,
+         "Pareto trade-off between repetition (CS@20) and ranking quality (NDCG@20)",
+         ha="center", fontsize=7, style="italic")
 
 out_path = os.path.join(OUT, "lambda_c_pareto.pdf")
 fig.savefig(out_path, bbox_inches="tight", facecolor="white")
