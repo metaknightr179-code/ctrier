@@ -2046,8 +2046,18 @@ def main():
     # --- Six-cell component ablation ---
     if args.sixcell:
         for proto in protos:
+            # Prefer the 3-seed eval output dir (eval_sixcell_3seed.sh writes
+            # to sixcell_firstavg_3seed). Fall back to the legacy single-seed
+            # dir so --sixcell still works on older evals.
+            outdir_3 = os.path.join(SCRIPT_DIR, "sixcell_firstavg_3seed")
+            outdir_1 = os.path.join(SCRIPT_DIR, "sixcell_firstavg")
+            chosen = outdir_3 if os.path.isdir(outdir_3) else outdir_1
+            if chosen == outdir_3:
+                print(f"Using 3-seed result dir: {outdir_3}")
+            else:
+                print(f"Legacy single-seed dir found: {outdir_1} (no 3-seed dir)")
             write_sixcell_tex(
-                outdir=os.path.join(SCRIPT_DIR, "sixcell_firstavg"),
+                outdir=chosen,
                 variant="kuairec_first_average",
                 lamb=0.01,
                 proto=proto,
