@@ -36,7 +36,9 @@ esac
 # Batch 256 fits all converted datasets after the popularity cut
 BATCH=256
 
-# Checkpoint prefixes (dense + non-dense)
+# Checkpoint prefixes (dense + non-dense, legacy + train_bestconfig_newds.sh)
+#   train_bestconfig_newds.sh produces: save_pt_dense_lamb001_order0_<DS>
+#   older scripts produce:             save_pt_dense_<config>_<DS>
 PREFIXES=(
   "save_pt_dense_|"
   "save_pt_notype_dense_|-no_type"
@@ -44,8 +46,8 @@ PREFIXES=(
   "save_pt_notype_|-no_type"
 )
 
-# Configs (7)
-CONFIGS=( nodiv lamb0002 lamb0005 lamb0005_consec0001 lamb001 lamb005 lamb01 )
+# Configs (7 older configs + 2 newer from train_bestconfig_newds.sh)
+CONFIGS=( nodiv lamb0002 lamb0005 lamb0005_consec0001 lamb001 lamb005 lamb01 order0 softo1 )
 
 get_latest_epoch() {
     ls "${1}"/duorec-*.pth 2>/dev/null | sed 's/.*duorec-//;s/\.pth//' | sort -n | tail -1
