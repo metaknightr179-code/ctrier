@@ -102,20 +102,12 @@ plt.rcParams.update({
 
 ORDER = ["TRIER", "TRIER-C", "TRIER-L", "PACER-Full"]
 
-# Shift CS values by ε so CS=0 maps to a finite log value.
-ε = 0.00005   # 5e-5 — small enough that it doesn't visually shift any real CS
-
-def xform(cs):
-    """True CS → shifted CS for log-scale plotting."""
-    return cs + ε
-
 fig, ax = plt.subplots(1, 1, figsize=(6.2, 3.8))
 fig.subplots_adjust(left=0.13, right=0.95, top=0.70, bottom=0.18)
 
 for fam in ORDER:
     pts = FAMILIES[fam]
-    # log-transformed x (add ε), true y
-    xs = [xform(p[2]) for p in pts]
+    xs = [p[2] for p in pts]
     ys = [p[1] for p in pts]
     color = PANEL_COLORS[fam]
     hl = PANEL_HIGHLIGHT[fam]
@@ -130,7 +122,6 @@ for fam in ORDER:
                     arrowprops=dict(arrowstyle="-|>", color=hl, lw=0.8,
                                     mutation_scale=8))
 
-    # λ=0 start ring
     ax.scatter([xs[0]], [ys[0]], s=22, c="none", zorder=6,
                edgecolors=hl, linewidths=0.8)
 
@@ -138,41 +129,42 @@ for fam in ORDER:
 ax.set_xlabel("CS@20  (mean adjacent cosine, ↓ better)", labelpad=3)
 ax.set_ylabel("NDCG@20  (↑ better)", labelpad=3)
 
-# LOG x-scale — exponentially increasing tick values → equally spaced on axis.
-# CS=0 → ε=5e-5 which is the leftmost tick.
-# λ=0 sits at CS ≈ 0.08–0.17 (far right), λ≥0.001 at CS ≤ 0.06.
-ax.set_xscale("log")
-ax.set_xlim(ε * 0.8, xform(0.20))   # left: just below CS=0, right: well past max CS
+# LOG2 x-axis with ticks that ×2 each time, equally spaced on visual axis.
+# Ticks: base × 2^k for k = 0..N → [0.0001, 0.0002, 0.0004, 0.0008, ...]
+import math
+BASE = 0.0001            # 1e-4 — the smallest meaningful CS
+MAX_CS = 0.17            # max CS in our data (TRIER-C λ=0)
+k_max = int(math.ceil(math.log(MAX_CS / BASE, 2))) + 1   # number of doublings
+true_ticks = [BASE * (2 ** k) for k in range(k_max + 1)]
+# e.g. [0.0001, 0.0002, 0.0004, 0.0008, 0.0016, 0.0032, 0.0064, 0.0128, 0.0256, 0.0512, 0.1024]
 
-# y-axis: tight on NDCG range (include all families including TRIER-L low NDCG)
+ax.set_xscale("log", base=2)
+ax.set_xlim(true_ticks[0] * 0.7, true_ticks[-1] * 1.2)
+
+# Set explicit tick positions + "0" label for the first one
+ax.set_xticks(true_ticks)
+def cs_fmt(val, pos):
+    if val <= BASE * 1.1:
+        return "0"
+    # show as decimal (not scientific) for readability
+    return f"{val:.4f}".rstrip("0").rstrip(".")
+ax.xaxis.set_major_formatter(mticker.FuncFormatter(cs_fmt))
+# Also enable minor ticks between the power-of-2 majors
+ax.xaxis.set_minor_locator(mticker.NullLocator())  # clean — no clutter
+
+# y-axis: tight
 y_lo = min([p[1] for fam in ORDER for p in FAMILIES[fam]])
 y_hi = max([p[1] for fam in ORDER for p in FAMILIES[fam]])
 y_margin = (y_hi - y_lo) * 0.10
 ax.set_ylim(y_lo - y_margin, y_hi + y_margin)
 
-# Custom x-ticks with TRUE CS values as labels (not CS+ε)
-# Ticks at log-spaced positions; the formatter subtracts ε before displaying
-true_ticks = [0.0, 0.001, 0.005, 0.01, 0.05, 0.1]
-tick_positions = [xform(t) for t in true_ticks]
-ax.set_xticks(tick_positions)
-# Subtract ε to show the real CS value, handle CS=0 edge case
-def true_cs_fmt(val, pos):
-    real = val - ε
-    if real <= 0:
-        return "0"
-    return f"{real:.3g}"
-ax.xaxis.set_major_formatter(mticker.FuncFormatter(true_cs_fmt))
-
-# grid — major + minor log ticks
-ax.grid(True, linestyle=":", alpha=0.4, zorder=0, which="both")
+ax.grid(True, linestyle=":", alpha=0.4, zorder=0, which="major")
 ax.tick_params(axis="both", which="major", pad=1)
-ax.tick_params(axis="x", which="minor", length=1.5)
 
 for spine in ["top", "right"]:
     ax.spines[spine].set_visible(False)
 
 # ── Legend + direction hint + title ─────────────────────────────────────
-# Legend: 4-col flat row at top of figure
 leg = fig.legend(labels=ORDER, loc="upper center",
                  bbox_to_anchor=(0.5, 0.975),
                  ncol=4, frameon=False, fontsize=7,

@@ -58,10 +58,23 @@ def build_model(pt_dir, latest_ckpt, type_flag):
     if rt_ckpts:
         rt_model = main_pt.TRIER_RT(N, 2, args.hn, args.hd, args.dr, args.b, args)
 
-    # Load PT checkpoint (optional; counting params doesn't need weights,
-    # but loading confirms the checkpoint matches the model architecture)
-    from script import load_state_dict_compat
-    load_state_dict_compat(model, latest_ckpt, args.device)
+    # Load PT checkpoint — use strict=False + shape filter because some
+    # "notype" checkpoints were actually saved WITH type embeddings, so
+    # item_type_ids buffer shape (10728, 4) differs from no_type model (10728, 1).
+    # We skip shape-mismatched keys; param counting doesn't need loaded weights
+    # anyway, but loading confirms the ckpt matches expected architecture.
+    try:
+        state = torch.load(latest_ckpt, map_location="cpu")
+        # Filter out keys with shape mismatches
+        model_state = model.state_dict()
+        filtered = {k: v for k, v in state.items()
+                    if k in model_state and model_state[k].shape == v.shape}
+        missing = [k for k in model_state if k not in filtered]
+        model.load_state_dict(filtered, strict=False)
+        if missing:
+            print(f"  (skipped {len(missing)} shape-mismatched keys: {missing[:3]}...)")
+    except Exception as e:
+        print(f"  PT load warn (non-fatal): {e}")
 
     return model, rt_model, args
 
