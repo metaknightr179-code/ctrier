@@ -92,6 +92,9 @@ run_eval_once() {
   STAGE="${OUT}.staging"; rm -rf "$STAGE"; mkdir -p "$STAGE"
   ln -s "$(cd "${PT_DIR}/model" && pwd)" "$STAGE/model" 2>/dev/null
   local TAG=$(basename "$PT_DIR" | sed "s/save_pt_.*_${VAR}_//")
+  # Normalize: TAG "seed1" → "_seed1", empty TAG (legacy seed0) → ""
+  # so OUT paths produce test_result_small_seed1.txt (matches analyze_results.py glob)
+  if [ -n "$TAG" ]; then TAG="_${TAG}"; fi
   echo "    eval ${PT_DIR} ep${LATEST} lamb_c=${LMD} -> $(basename "$OUT")"
   CUDA_VISIBLE_DEVICES=${GPU} python3 main_pt.py \
       -tf ${DIR}/train-v0.txt -vf ${DIR}/valid-v0.txt -ef "$EF" \

@@ -1498,11 +1498,18 @@ def write_penalty_sweep_tex(variant="kuairec_first_average", lamb=0.01,
       0.05      test_result{,_small}_pen005.txt
       0.1       test_result{,_small}_pen01.txt
 
-    Two family panels: PACER-Full (content + L_order) and PACER-LS (no content + L_order).
+    Four family panels covering all six-cell variants (some cells share the
+    same checkpoint since λ_c is inference-only):
+      TRIER      → base (γ=0, -no_type)  → also covers TRIER-S when λ_c>0
+      TRIER-C    → content only (γ=0)
+      TRIER-L    → L_order trained (γ=0.01, -no_type) → also covers PACER-LS
+      PACER-Full → L_order trained + content (γ=0.01)
     """
     families = [
-        ("PACER-Full",   "save_pt_dense_lamb001_softo001_"),
-        ("PACER-LS",     "save_pt_notype_dense_lamb001_softo001_"),
+        (r"TRIER",       "save_pt_notype_dense_lamb001_order0_"),
+        (r"TRIER-C",     "save_pt_dense_lamb001_order0_"),
+        (r"TRIER-L",     "save_pt_notype_dense_lamb001_softo001_"),
+        (r"PACER-Full",  "save_pt_dense_lamb001_softo001_"),
     ]
     # (lambda_c display, file tag; "" = canonical penalty-off file)
     grid = [

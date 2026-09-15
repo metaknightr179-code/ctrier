@@ -47,29 +47,36 @@ NEG_SMALL="${SMALL_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt"
 
 # FAMILY_NAME|DIR_PREFIX|TYPE_FLAG
 #
-# NOTE: lambda_c λ_c is the inference-time hard consecutive penalty. It is
-# specifically designed to FIX the "frustrated regime" that appears when
-# γ_o L_order is trained at 0.01 (accuracy peaks but repetition worsens —
-# see Figures/tau_s_bars + gamma_o_bars in the paper). Therefore the sweep
-# MUST run on checkpoints that WERE trained with L_order at γ_o=0.01 —
-# i.e. the softo001 suffix. Running on the γ=0 (no-L_order) checkpoints
-# produces a meaningless sweep: those checkpoints have no frustrated regime
-# to fix, so λ_c looks like a random knob rather than the targeted fix it is.
+# All six-cell variants, with 4 unique checkpoint prefixes (some cells share
+# the same PT checkpoint — λ_c sweep is inference-only so evaluating once =
+# evaluating for all cells that use that ckpt). Mapping to the six-cell table:
 #
-#   save_pt_dense_lamb001_softo001_*          → PACER-Full (content + L_order trained, no type flag)
-#   save_pt_notype_dense_lamb001_softo001_*   → PACER-LS  (no content, L_order trained, -no_type)
+#   Panel name    → PT prefix                            → covers sixcell rows
+#   ──────────────────────────────────────────────────────────────────────────
+#   TRIER base    → save_pt_notype_dense_lamb001_order0  → TRIER, TRIER-S
+#   TRIER-C       → save_pt_dense_lamb001_order0          → TRIER-C
+#   TRIER-L       → save_pt_notype_dense_lamb001_softo001 → TRIER-L, PACER-LS
+#   PACER-Full    → save_pt_dense_lamb001_softo001        → PACER-Full
 #
-# If you need the γ=0 comparison (is λ_c useful even WITHOUT L_order?), run
-# PEN_FAMILIES='type|save_pt_dense_lamb001|
-# notype|save_pt_notype_dense_lamb001|-no_type' \
-#   bash eval_penalty_sweep_firstavg.sh
+# NOTE: λ_c is specifically designed to FIX the "frustrated regime" that
+# appears when γ_o L_order is trained at 0.01 (accuracy peaks but repetition
+# worsens — see Figures/tau_s_bars + gamma_o_bars). The key comparison is
+# between:
+#   - TRIER base     (γ=0, no L_order)  → λ_c useful or not?
+#   - TRIER-L        (γ=0.01, L_order)  → λ_c fixes frustrated regime?
+#   - TRIER-C vs PACER-Full             → content interaction?
+#
+# Override with PEN_FAMILIES='NAME|PREFIX|FLAG|NAME|PREFIX|FLAG' if you need
+# a subset (e.g. only PACER-Full and TRIER-L to verify the frustrated fix).
 if [ -n "${PEN_FAMILIES:-}" ]; then
     FAMILIES=()
     while IFS= read -r line; do [ -n "$line" ] && FAMILIES+=("$line"); done <<< "$PEN_FAMILIES"
 else
     FAMILIES=(
+        "TRIER|save_pt_notype_dense_lamb001_order0|-no_type"
+        "TRIER-C|save_pt_dense_lamb001_order0|"
+        "TRIER-L|save_pt_notype_dense_lamb001_softo001|-no_type"
         "PACER-Full|save_pt_dense_lamb001_softo001|"
-        "PACER-LS|save_pt_notype_dense_lamb001_softo001|-no_type"
     )
 fi
 
