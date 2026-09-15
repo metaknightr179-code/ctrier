@@ -11,13 +11,16 @@ $N_c=31$, $h=64$), the optional author embedding $\mathbf{E}^{a}\in\mathbb{R}^{N
 ($N_a=8369$ unique creators), and the optional music embedding
 $\mathbf{E}^{m}\in\mathbb{R}^{N_m\times h}$ ($N_m=10728$ tracks). For the
 default content-only PACER used throughout this paper (category-type only),
-these contribute $31\times64 = 1{,}984$ parameters. The full 4-layer Transformer
-encoder with hidden dimension 64, self-attention heads 4, and feedforward
-width $4h=256$ adds roughly $800$K parameters; the item embedding table
+these contribute $31\times64 = 1{,}984$ parameters. The Transformer encoder
+(2 layers, 2 self-attention heads per layer, hidden dimension $h=64$,
+feedforward width $4h=256$, ReLU activation) plus the 2-layer reverse-trajectory
+encoder share the same hidden dimension; together they account for roughly
+$460$K parameters. The item embedding table
 $\mathbf{V}\in\mathbb{R}^{N\times h}$ contributes $10728\times64 \approx 687$K.
-Total parameter count is $1.5$M --- comparable to SASRec's $1.7$M and well below
-BERT4Rec's $4.2$M on the same vocabulary. Adding author and music embeddings
-adds $535$K and $687$K respectively, for a full-model total of $\approx 2.7$M.
+Total parameter count is $1.15$M --- comparable to SASRec's $1.7$M and well
+below BERT4Rec's $4.2$M on the same vocabulary. Adding author and music
+embeddings adds $535$K and $687$K respectively, for a full-model total of
+$\approx 2.4$M.
 
 \paragraph{Theoretical complexity.}
 Let $N$ be the vocabulary size, $K$ the list length, $h$ the hidden
