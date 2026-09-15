@@ -1666,25 +1666,52 @@ def write_singletons_tex(proto="big"):
     ]
 
     def load_result(pt_dir, proto):
-        if proto == "small":
-            fp = os.path.join(pt_dir, "test_result_small_gridorder.txt")
-        else:
-            fp = os.path.join(pt_dir, "test_result_gridorder.txt")
-        if not os.path.exists(fp):
-            # fallback: legacy test_result.txt (big only)
-            if proto == "big":
-                fp_legacy = os.path.join(pt_dir, "test_result.txt")
-                if os.path.exists(fp_legacy):
-                    fp = fp_legacy
-                else:
-                    return None
-            else:
-                return None
-        try:
-            with open(fp) as f:
-                return ast.literal_eval(f.readline().strip())
-        except Exception:
+        """Find the best result file in pt_dir for the requested protocol.
+
+        Strategy:
+          1. glob all test_result*.txt in the dir
+          2. filter by protocol (small = contains "small" in basename; big = no "small")
+          3. parse each file; keep newest (mtime) successfully parsed dict
+          4. if nothing matches, try the other protocol once (some evals only ran big)
+        This way we pick up result files from eval_singletons.sh, the gamma sweep,
+        penalty sweep, the legacy gridover evals, and any other eval that may
+        have touched the same PT dir — whichever was run last wins.
+        """
+        if not os.path.isdir(pt_dir):
             return None
+
+        all_files = glob.glob(os.path.join(pt_dir, "test_result*.txt"))
+        if not all_files:
+            return None
+
+        def classify(fp):
+            base = os.path.basename(fp)
+            return "small" if "small" in base else "big"
+
+        def try_parse(fp):
+            try:
+                with open(fp) as f:
+                    d = ast.literal_eval(f.readline().strip())
+                if isinstance(d, dict) and len(d) >= 3:
+                    return d
+            except Exception:
+                pass
+            return None
+
+        # Primary: match requested proto
+        primary = [(fp, try_parse(fp)) for fp in all_files if classify(fp) == proto]
+        primary = [(fp, d) for fp, d in primary if d is not None]
+        # Fallback: opposite proto (some datasets only ran big)
+        opposite = [(fp, try_parse(fp)) for fp in all_files if classify(fp) != proto]
+        opposite = [(fp, d) for fp, d in opposite if d is not None]
+
+        if primary:
+            primary.sort(key=lambda x: os.path.getmtime(x[0]), reverse=True)
+            return primary[0][1]
+        if opposite:
+            opposite.sort(key=lambda x: os.path.getmtime(x[0]), reverse=True)
+            return opposite[0][1]
+        return None
 
     rows = []
     for pt_dir, fam, dataset, gam in SINGLES:
