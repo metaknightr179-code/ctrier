@@ -39,6 +39,9 @@ def get_latest_epoch(pt_dir):
 def build_model(pt_dir, latest_ckpt, type_flag):
     """Instantiate TRIER_PT, load checkpoint, set side-info maps (cates, etc.)."""
     args = get_args()
+    # main_pt.py sets args.device from torch.cuda.is_available() — script.py parser
+    # has no -device arg, so set it explicitly here.
+    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.tf = f"{DATA_DIR}/train-v0.txt"
     args.vf = f"{DATA_DIR}/valid-v0.txt"
     args.ef = f"{DATA_DIR}/test-v0.txt"
@@ -51,6 +54,7 @@ def build_model(pt_dir, latest_ckpt, type_flag):
     args.t_mode = "greedy"
     args.no_type = bool(type_flag)  # -no_type → True
     args.dense = True                # our checkpoints are dense
+    # args.soft_order_loss and args.gamma_consec etc. — not needed for inference
 
     model = main_pt.TRIER_PT(N, args.ln, args.hn, args.hd, args.dr, args.b, args)
     # Load RT
