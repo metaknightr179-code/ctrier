@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Measure true parameter counts, one-forward-pass flops, and GPU memory for
-the six-cell checkpoints. Run ONCE on AutoDL after pull — ~30 seconds.
+"""Measure ACTUAL parameter counts per six-cell checkpoint.
+
+Simplified from measure_model_complexity.py: only does param counting
+(sum(p.numel() for p in model.parameters())) which is authoritative. No
+forward-pass (those need valid side-info id ranges; param counts don't).
 
 Usage:  cd ~/ctrier && python3 measure_model_complexity.py
-Output:  prints one row per checkpoint with real numbers; writes
-         figures/complexity_actual_measured.txt so you can paste into the paper.
+Output:  prints one row per checkpoint; no files changed.
 """
-import os, glob, sys, time, torch
-import torch.nn as nn
-
+import os, glob, sys, torch
 sys.path.insert(0, ".")
-from script import get_args, get_cates_map  # noqa
-import main_pt  # noqa: defines TRIER_PT
+from script import get_args
+import main_pt
 
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 
@@ -22,9 +22,6 @@ CATE_FILE = f"{DATA_DIR}/kuairec_cate.txt"
 NEG_BIG = f"{DATA_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt"
 N = 10728; NCAT = 31
 RT_DIR = f"save_rt_fix_{VAR}"
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"device={device}, GPU={torch.cuda.get_device_name(0) if device.type=='cuda' else 'CPU'}")
 
 def count_params(model):
     total = sum(p.numel() for p in model.parameters())
@@ -37,11 +34,8 @@ def get_latest_epoch(pt_dir):
     return files[-1] if files else None
 
 def build_model(pt_dir, latest_ckpt, type_flag):
-    """Instantiate TRIER_PT, load checkpoint, set side-info maps (cates, etc.)."""
     args = get_args()
-    # main_pt.py sets args.device from torch.cuda.is_available() — script.py parser
-    # has no -device arg, so set it explicitly here.
-    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    args.device = torch.device("cpu")   # count params on CPU; no CUDA needed
     args.tf = f"{DATA_DIR}/train-v0.txt"
     args.vf = f"{DATA_DIR}/valid-v0.txt"
     args.ef = f"{DATA_DIR}/test-v0.txt"
@@ -52,87 +46,56 @@ def build_model(pt_dir, latest_ckpt, type_flag):
     args.lamb = 0.01
     args.div = True
     args.t_mode = "greedy"
-    args.no_type = bool(type_flag)  # -no_type → True
-    args.dense = True                # our checkpoints are dense
-    # args.soft_order_loss and args.gamma_consec etc. — not needed for inference
+    args.no_type = bool(type_flag)
+    args.dense = True
 
     model = main_pt.TRIER_PT(N, args.ln, args.hn, args.hd, args.dr, args.b, args)
-    # Load RT
+
+    # RT model
+    rt_model = None
     rt_ckpts = sorted(glob.glob(f"{RT_DIR}/model/duorec-*.pth"),
                        key=lambda p: int(p.split("duorec-")[1].split(".pth")[0]))
     if rt_ckpts:
-        rt_epoch = int(rt_ckpts[-1].split("duorec-")[1].split(".pth")[0])
         rt_model = main_pt.TRIER_RT(N, 2, args.hn, args.hd, args.dr, args.b, args)
-        rt_ckpt = rt_ckpts[-1]
-        # Load rt_model (this is a separate model class — need its .load_state_dict)
-        try:
-            rt_state = torch.load(rt_ckpt, map_location=device)
-            rt_model.load_state_dict(rt_state)
-            rt_model.requires_grad_(False).eval()
-            rt_model.to(device)
-        except Exception as e:
-            print(f"  RT load warn: {e}")
-            rt_model = None
-    else:
-        rt_model = None
 
-    try:
-        state = torch.load(latest_ckpt, map_location=device)
-        # Use the compat loader from main_pt
-        from script import load_state_dict_compat
-        load_state_dict_compat(model, latest_ckpt, device)
-    except Exception as e:
-        print(f"  PT load warn: {e}")
-
-    model.requires_grad_(False).eval()
-    model.to(device)
-
-    # Load item categories into model
-    try:
-        cate_map = get_cates_map(CATE_FILE)
-        model.set_item_types(cate_map)
-    except Exception as e:
-        print(f"  cate load warn: {e}")
+    # Load PT checkpoint (optional; counting params doesn't need weights,
+    # but loading confirms the checkpoint matches the model architecture)
+    from script import load_state_dict_compat
+    load_state_dict_compat(model, latest_ckpt, args.device)
 
     return model, rt_model, args
 
-# Six-cell configs
 CELLS = [
-    ("TRIER",      "save_pt_notype_dense_lamb001_order0",  True),
-    ("TRIER-C",    "save_pt_dense_lamb001_order0",        False),
-    ("TRIER-L",    "save_pt_notype_dense_lamb001_softo001", True),
-    ("TRIER-S",    "save_pt_notype_dense_lamb001_order0", True),
-    ("PACER-LS",   "save_pt_notype_dense_lamb001_softo001", True),
-    ("PACER-Full", "save_pt_dense_lamb001_softo001",       False),
+    ("TRIER",       "save_pt_notype_dense_lamb001_order0",    True),
+    ("TRIER-C",     "save_pt_dense_lamb001_order0",            False),
+    ("TRIER-L",     "save_pt_notype_dense_lamb001_softo001",  True),
+    ("TRIER-S",     "save_pt_notype_dense_lamb001_order0",    True),
+    ("PACER-LS",    "save_pt_notype_dense_lamb001_softo001",  True),
+    ("PACER-Full",  "save_pt_dense_lamb001_softo001",         False),
 ]
 
-def time_forward(model, rt_model, batch_size=32, warmup=3, runs=5):
-    """Time one greedy decoding forward pass on CUDA."""
-    if device.type != "cuda":
-        return None
-    with torch.no_grad():
-        fake_session = torch.randint(1, N, (batch_size, 50), device=device)
-        fake_reverse = torch.randint(1, N, (batch_size, 50), device=device)
-        for _ in range(warmup):
-            try:
-                _, out = model.test_forward(fake_session, fake_reverse, rt_model, True)
-            except Exception as e:
-                print(f"  forward fail: {e}"); return None
-        torch.cuda.synchronize()
-        times = []
-        t0 = time.time()
-        for _ in range(runs):
-            _, out = model.test_forward(fake_session, fake_reverse, rt_model, True)
-        torch.cuda.synchronize()
-        elapsed = (time.time() - t0) / runs * 1000
-    return elapsed  # ms per forward (batch_size sessions)
+def breakdown(model):
+    """Per-table param breakdown — useful for the paper's 'Parameter count' paragraph."""
+    out = {}
+    for name, mod in model.named_children():
+        params = sum(p.numel() for p in mod.parameters())
+        if params > 0:
+            out[name] = params
+    # Top-level embedding tables specifically
+    extra = {}
+    for etype in ["item_embedding", "type_embedding", "author_embedding", "music_embedding", "dur_embedding", "position_embedding"]:
+        if hasattr(model, etype):
+            emb = getattr(model, etype)
+            p = sum(p.numel() for p in emb.parameters())
+            extra[etype] = p
+    out.update(extra)
+    return out
 
 print()
 print("="*90)
-print(f"{'cell':<12} {'PT dir (latest epoch)':<45} {'PT params':>12} {'RT params':>12} {'PT+RT total':>12} {'fwd_ms/bs32':>12} {'peak_mem_MB':>12}")
+print(f"{'cell':<12} {'PT ckpt':<40} {'PT total':>12} {'RT total':>12} {'PT+RT':>12} {'model arch':<30}")
 print("="*90)
 
-rows = []
 for cell_label, pt_suffix, is_notype in CELLS:
     pt_dir = f"{pt_suffix}_{VAR}"
     if not os.path.isdir(f"{pt_dir}/model"):
@@ -147,26 +110,29 @@ for cell_label, pt_suffix, is_notype in CELLS:
     try:
         model, rt_model, args = build_model(pt_dir, ckpt, is_notype)
     except Exception as e:
-        print(f"{cell_label:<12} BUILD FAIL: {e}"); continue
+        print(f"{cell_label:<12} FAIL: {e}"); import traceback; traceback.print_exc(); continue
 
-    pt_total, pt_train = count_params(model)
-    rt_total, rt_train = count_params(rt_model) if rt_model else (0, 0)
-    elapsed = time_forward(model, rt_model)
-
-    peak_mem = torch.cuda.max_memory_allocated() / 1e6 if device.type == "cuda" else 0
-    torch.cuda.reset_peak_memory_stats() if device.type == "cuda" else None
-
-    row = f"{cell_label:<12} {pt_suffix+' ep'+str(latest_ep):<45} {pt_total:>12,} {rt_total:>12,} {pt_total+rt_total:>12,} {elapsed or 0:>12.1f} {peak_mem:>12.1f}"
+    pt_total, _ = count_params(model)
+    rt_total, _ = count_params(rt_model) if rt_model else (0, 0)
+    arch = "no-type" if is_notype else "content (type embeddings)"
+    row = f"{cell_label:<12} ep{latest_ep:<38} {pt_total:>12,} {rt_total:>12,} {pt_total+rt_total:>12,}   {arch}"
     print(row)
-    rows.append(row)
 
-    # Free GPU memory before next model
+    # Per-table breakdown for the first PACER-Full (author/music embeddings too)
+    if cell_label == "PACER-Full":
+        print("  ── PT per-table breakdown ──")
+        for name, p in sorted(breakdown(model).items(), key=lambda kv: -kv[1]):
+            print(f"    {name:<30} {p:>10,}")
+        if rt_model:
+            print("  ── RT per-table breakdown ──")
+            for name, p in sorted(breakdown(rt_model).items(), key=lambda kv: -kv[1]):
+                print(f"    {name:<30} {p:>10,}")
+
     del model, rt_model
-    torch.cuda.empty_cache() if device.type == "cuda" else None
+    import gc; gc.collect()
 
 print()
 print("="*90)
-print("Run `free -h` on AutoDL after — GPU memory usage during each forward is the peak column above.")
-print("The 'params' column is the ACTUAL count from sum(p.numel() for p in model.parameters()).")
-print("You can paste those numbers into complexity_section.tex verbatim.")
-print("="*90)
+print("All numbers = sum(p.numel() for p in model.parameters()).")
+print("Author/music/duration embeddings only exist if -author_file/-music_file/-dur_file passed.")
+print("so author_embedding.weight only appears in full-model checkpoints.")
