@@ -807,6 +807,13 @@ def write_sixcell_tex(outdir, variant="kuairec_first_average", lamb=0.01,
 
     Order loss = the soft consec training loss γ_o L_order (not L_div!),
     Order score = the hard inference-time penalty -λ_c C_s(j).
+
+    Checkpoint provenance (all six cells greedy -div -lamb 0.01, see
+    eval_sixcell_ablation_kuairec.sh):
+      no-L cells: save_pt_{notype_}dense_lamb001_<variant>
+      L cells   : save_pt_{notype_}dense_lamb001_softo001_<variant>
+                  (fixed power-annealed L_order, gamma_o=0.01)
+      S cells differ from their matched no-S cells only by -lmd_consec 0.01.
     """
     # Cell definition: label, dir_name, Content, OrderLoss, OrderScore, question
     # We map to the directory structure used by eval_sixcell_ablation_kuairec.sh.

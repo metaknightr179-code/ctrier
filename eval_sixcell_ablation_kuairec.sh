@@ -1,29 +1,39 @@
 #!/bin/bash
 # =============================================================================
 # SIX-CELL COMPONENT ABLATION (Content x Order-loss x Order-score),
-# one variant (kuairec_first_average) at the single lambda = 0.01 operating
-# point. All checkpoints already exist from the dense lambda sweep; this
-# script only reuses their result files or runs the ONE new eval combination
-# (TRIER-S: nodiv checkpoint decoded with the diverse greedy scorer).
+# kuairec_first_average at the lambda = 0.01 operating point.
 #
-#   Cell        checkpoint (First-Average)             Content OrderLoss OrderScore
-#   TRIER       notype_dense_nodiv                       no      no        no
-#   TRIER-C     dense_nodiv (type)                       yes     no        no
-#   TRIER-L     notype_dense_lamb001  (topk eval)        no      yes       no
-#   TRIER-S     notype_dense_nodiv  (greedy lamb=.01)    no      no        yes   <- NEW eval
-#   PACER-LS    notype_dense_lamb001 (greedy lamb=.01)   no      yes       yes
-#   PACER-Full  dense_lamb001       (greedy lamb=.01)   yes     yes       yes
+# All six cells use the SAME step-wise greedy diverse decoder
+# (-div -lamb 0.01 -t_mode greedy), so adjacent columns differ in exactly ONE
+# factor:
+#   * Content      : type embeddings present (dense) vs -no_type
+#   * Order loss L : fixed differentiable L_order at training, gamma_o=0.01
+#                    (checkpoint suffix lamb001_softo001) vs absent (lamb001)
+#   * Order score S: inference adjacent penalty -lmd_consec 0.01 (=lambda_c)
+#                    vs 0
 #
-# NAMING WARNING: in the dense training scripts the suffix lamb01 means the
-# checkpoint was TRAINED at -lamb 0.1, while lamb001 means -lamb 0.01. This
-# ablation is at the lambda=0.01 operating point, so it MUST use lamb001 dirs.
+#   Cell        checkpoint (save_pt_*)              Content OrderLoss OrderScore
+#   TRIER       notype_dense_lamb001                 no      no        no
+#   TRIER-C     dense_lamb001 (type)                 yes     no        no
+#   TRIER-L     notype_dense_lamb001_softo001        no      yes       no
+#   TRIER-S     notype_dense_lamb001                 no      no        yes
+#   PACER-LS    notype_dense_lamb001_softo001        no      yes       yes
+#   PACER-Full  dense_lamb001_softo001               yes     yes       yes
 #
-# "Order loss" entered during TRAINING (-div -lamb 0.01 via calculate_score,
-# which shapes the diverse tokens L_div is evaluated on); "Order score" is the
-# inference-time hard adjacent penalty -lmd_consec 0.01 (=-lambda_c C_s(j)),
-# applied ONLY in the greedy cells that have OrderScore=yes. The greedy cells
-# are ALWAYS re-decoded here (canonical test_result{,_small}.txt are
+# Requirements / provenance:
+#   * lamb001 dirs: canonical dense lambda=0.01 checkpoints.
+#   * lamb001_softo001 dirs: FIXED power-annealed soft L_order at gamma=0.01,
+#     produced by CG_FIXED=1 train_consecgamma_grid_firstavg.sh (or the
+#     CG_CONFIGS="softo001|0.01" minimal subset). These replace the earlier
+#     nodiv/topk cells: every cell is now decoded with the diverse scorer, so
+#     the S column isolates lambda_c cleanly.
+#   * save_rt_fix_<variant>: greedy decoding needs the frozen RT checkpoint.
+# All cells are ALWAYS freshly decoded here (canonical greedy files are
 # penalty-off and also predate MaxRun@k, so they must not be reused).
+#
+# Knobs:
+#   SIXCELL_ORDER_SUF=lamb001_softo005  ... L column at another fixed gamma
+#   SIXCELL_BASE_SUF=lamb001            ... base suffix
 #
 # Usage:
 #   CUDA_VISIBLE_DEVICES=0 bash eval_sixcell_ablation_kuairec.sh
@@ -36,8 +46,11 @@ set -u
 GPU=${CUDA_VISIBLE_DEVICES:-0}
 VAR=kuairec_first_average
 LAMB=0.01
+LMD_ON=${SIXCELL_LMD:-0.01}
+BASE_SUF=${SIXCELL_BASE_SUF:-lamb001}
+LOSS_SUF=${SIXCELL_ORDER_SUF:-lamb001_softo001}
 OUTDIR="./sixcell_firstavg"
-mkdir -p "$OUTDIR" ./save_denseeval_staging ./rt_dummy_for_duorec
+mkdir -p "$OUTDIR" ./save_denseeval_staging
 
 VAR_DIR="./KuaiRec_variants/${VAR}"
 SMALL_DIR="./KuaiRec_small_eval/${VAR}"
@@ -45,47 +58,28 @@ RT_DIR="./save_rt_fix_${VAR}"
 NEG_BIG="${VAR_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt"
 NEG_SMALL="${SMALL_DIR}/KuaiRec-random-sample_size=99-seed=4444.txt"
 
-# NAME|PT_DIR|TYPE_FLAG|MODE(topk|greedy)|LMD_CONSEC
+# NAME|TYPE(type/notype)|L_order(1/0)|OrderScore(1/0)
 CELLS=(
-    "TRIER|save_pt_notype_dense_nodiv_${VAR}|-no_type|topk|0"
-    "TRIER-C|save_pt_dense_nodiv_${VAR}||topk|0"
-    "TRIER-L|save_pt_notype_dense_lamb001_${VAR}|-no_type|topk|0"
-    "TRIER-S|save_pt_notype_dense_nodiv_${VAR}|-no_type|greedy|0.01"
-    "PACER-LS|save_pt_notype_dense_lamb001_${VAR}|-no_type|greedy|0.01"
-    "PACER-Full|save_pt_dense_lamb001_${VAR}||greedy|0.01"
+    "TRIER|notype|0|0"
+    "TRIER-C|type|0|0"
+    "TRIER-L|notype|1|0"
+    "TRIER-S|notype|0|1"
+    "PACER-LS|notype|1|1"
+    "PACER-Full|type|1|1"
 )
 
 get_latest_epoch() {
     ls "${1}"/duorec-*.pth 2>/dev/null | sed 's/.*duorec-//;s/\.pth//' | sort -n | tail -1
 }
 
-# Copy a canonical existing result file when it matches the cell exactly;
-# returns 1 when an actual eval run is needed.
-reuse_if_present () {
-    local SRC="$1" DST="$2"
-    if [ -s "$SRC" ]; then
-        cp "$SRC" "$DST"
-        echo "    -> reuse $(basename "$DST") from ${SRC#./}"
-        return 0
-    fi
-    return 1
-}
-
 run_eval () {
-    # $1=PT_DIR $2=LATEST $3=EF $4=EN $5=TYPE_FLAG $6=MODE $7=OUT $8=LMD_CONSEC
-    local PT_DIR="$1" LATEST="$2" EF="$3" EN="$4" TYPE_FLAG="$5" MODE="$6" OUT="$7"
-    local LMD="$8"
-    local STAGE="./save_denseeval_staging/sixcell_$(basename "$PT_DIR")_$(basename "$OUT")"
+    # $1=PT_DIR $2=LATEST $3=EF $4=EN $5=TYPE_FLAG $6=LMD_CONSEC $7=OUT $8=TAG
+    local PT_DIR="$1" LATEST="$2" EF="$3" EN="$4" TYPE_FLAG="$5" LMD="$6" OUT="$7" TAG="$8"
+    local STAGE="./save_denseeval_staging/sixcell_${TAG}_$(basename "$OUT")"
     rm -rf "$STAGE"; mkdir -p "$STAGE"
     ln -s "$(cd "${PT_DIR}/model" && pwd)" "$STAGE/model"
 
-    local DIV_FLAG="-lamb 0" IN_DIR="./rt_dummy_for_duorec"
-    if [ "$MODE" = "greedy" ]; then
-        DIV_FLAG="-div -lamb ${LAMB} -gamma_consec 0 -lmd_consec ${LMD}"
-        IN_DIR="$RT_DIR"
-    fi
-
-    echo "    running ${MODE} eval: $(basename "$PT_DIR") epoch ${LATEST}"
+    echo "    running greedy eval: $(basename "$PT_DIR") epoch ${LATEST}, lambda_c=${LMD}"
     CUDA_VISIBLE_DEVICES=${GPU} python3 main_pt.py \
         -tf "${VAR_DIR}/train-v0.txt" \
         -vf "${VAR_DIR}/valid-v0.txt" \
@@ -93,50 +87,53 @@ run_eval () {
         -cat "${VAR_DIR}/kuairec_cate.txt" \
         -n 10728 -n_cat 31 -vec ./KuaiRec_variants/kuairec_vec.npy \
         -m test -e ${LATEST} -b 256 \
-        ${TYPE_FLAG} ${DIV_FLAG} -t_mode ${MODE} \
+        ${TYPE_FLAG} -div -lamb ${LAMB} -gamma_consec 0 -lmd_consec ${LMD} -t_mode greedy \
         -start_epoch ${LATEST} -epoch_step 1 \
-        -i "$IN_DIR" -o "$STAGE" 2>&1 | tail -2
+        -i "$RT_DIR" -o "$STAGE" 2>&1 | tail -2
     cp "${STAGE}/test_result.txt" "$OUT" && echo "    -> $(basename "$OUT")"
 }
 
 echo "############################################################"
 echo "# SIX-CELL ABLATION (${VAR}, lambda=${LAMB})"
+echo "# base=${BASE_SUF}  L_order=${LOSS_SUF}  lambda_c=${LMD_ON}"
 echo "############################################################"
 
+if [ ! -d "${RT_DIR}/model" ]; then
+    echo "ERROR: RT checkpoint missing in ${RT_DIR}/model - greedy decoding needs it. Abort."
+    exit 1
+fi
+
 for CELL in "${CELLS[@]}"; do
-    IFS='|' read -r NAME PT_DIR TYPE_FLAG MODE LMD <<< "$CELL"
+    IFS='|' read -r NAME CTYPE HAS_L HAS_S <<< "$CELL"
     mkdir -p "${OUTDIR}/${NAME}"
+
+    if [ "$CTYPE" = "notype" ]; then
+        TYPE_FLAG="-no_type"; DIR_MID="notype_"; CT_LABEL="notype"
+    else
+        TYPE_FLAG=""; DIR_MID=""; CT_LABEL="type"
+    fi
+    SUF="$BASE_SUF"; [ "$HAS_L" = "1" ] && SUF="$LOSS_SUF"
+    LMD="0"; [ "$HAS_S" = "1" ] && LMD="$LMD_ON"
+    PT_DIR="./save_pt_${DIR_MID}dense_${SUF}_${VAR}"
+
     echo ""
-    echo "== ${NAME}  [${MODE}, $( [ -n "$TYPE_FLAG" ] && echo notype || echo type ), lmd_consec=${LMD}]  ${PT_DIR}"
+    echo "== ${NAME}  [${CT_LABEL}, L_order=${HAS_L}, lambda_c=${LMD}]  ${PT_DIR}"
 
     if [ ! -d "${PT_DIR}/model" ]; then
         echo "    MISSING checkpoint dir ${PT_DIR} — train it first"
         continue
     fi
     LATEST=$(get_latest_epoch "${PT_DIR}/model")
+    [ -z "$LATEST" ] && { echo "    MISSING checkpoint .pth in ${PT_DIR}"; continue; }
 
     # ---- big matrix ----
-    OUT_BIG="${OUTDIR}/${NAME}/test_result_big.txt"
-    if [ "$MODE" = "topk" ]; then
-        reuse_if_present "${PT_DIR}/test_result_topk.txt" "$OUT_BIG" \
-            || run_eval "$PT_DIR" "$LATEST" "${VAR_DIR}/test-v0.txt" "$NEG_BIG" \
-                        "$TYPE_FLAG" topk "$OUT_BIG" 0
-    else
-        # Greedy Order-score cells: ALWAYS re-decode with -lmd_consec (canonical
-        # greedy files are penalty-off and predate MaxRun).
-        run_eval "$PT_DIR" "$LATEST" "${VAR_DIR}/test-v0.txt" "$NEG_BIG" \
-                    "$TYPE_FLAG" greedy "$OUT_BIG" "$LMD"
-    fi
+    run_eval "$PT_DIR" "$LATEST" "${VAR_DIR}/test-v0.txt" "$NEG_BIG" \
+                "$TYPE_FLAG" "$LMD" "${OUTDIR}/${NAME}/test_result_big.txt" "${NAME}_big"
 
     # ---- small matrix ----
-    OUT_SMALL="${OUTDIR}/${NAME}/test_result_small.txt"
-    if [ "$MODE" = "topk" ]; then
-        reuse_if_present "${PT_DIR}/test_result_topk_small.txt" "$OUT_SMALL" \
-            || run_eval "$PT_DIR" "$LATEST" "${SMALL_DIR}/test-v0.txt" "$NEG_SMALL" \
-                        "$TYPE_FLAG" topk "$OUT_SMALL" 0
-    else
+    if [ -f "${SMALL_DIR}/test-v0.txt" ]; then
         run_eval "$PT_DIR" "$LATEST" "${SMALL_DIR}/test-v0.txt" "$NEG_SMALL" \
-                    "$TYPE_FLAG" greedy "$OUT_SMALL" "$LMD"
+                    "$TYPE_FLAG" "$LMD" "${OUTDIR}/${NAME}/test_result_small.txt" "${NAME}_small"
     fi
 done
 
