@@ -16,6 +16,8 @@
 # Usage: CUDA_VISIBLE_DEVICES=0 bash eval_singletons.sh
 # =============================================================================
 set -u
+# NOTE: NOT using set -e — we want to log failures per-row and continue
+# so one bad dataset doesn't skip the rest. Instead we check explicit conditions.
 GPU=${CUDA_VISIBLE_DEVICES:-0}
 
 # ──────────────────────────────────────────────────────────────
@@ -82,7 +84,14 @@ for ROW in "${SINGLES[@]}"; do
       -div -lamb 0.01 -gamma_consec 0 -t_mode greedy \
       -start_epoch ${LATEST} -epoch_step 1 \
       -i "${RT_DIR}" -o "${STAGE}" 2>&1 | tail -1
-  cp "${STAGE}/test_result.txt" "${PT_DIR}/test_result_gridorder.txt"
+  if [ -s "${STAGE}/test_result.txt" ]; then
+    cp "${STAGE}/test_result.txt" "${PT_DIR}/test_result_gridorder.txt"
+    echo "    ✓ wrote ${PT_DIR}/test_result_gridorder.txt ($(wc -c < ${PT_DIR}/test_result_gridorder.txt) bytes)"
+  else
+    echo "    ✗ FAIL — main_pt.py produced empty or missing test_result.txt"
+    echo "      Check: main_pt.py -tf ${DIR}/train-v0.txt -ef ${DIR}/test-v0.txt -vn ${DIR}/${NEG} -cat ${DIR}/${CATE} -vec ${VEC} -n ${N} -n_cat ${NCAT} -m test -e ${LATEST} -b 256 -div -lamb 0.01 -gamma_consec 0 -t_mode greedy -start_epoch ${LATEST} -epoch_step 1 -i ${RT_DIR} -o ${STAGE}"
+    continue
+  fi
 
   # ── SMALL matrix — only for KuaiRec variants ────────────────
   SMALL_DIR="./KuaiRec_small_eval/${DISPLAY}"
@@ -100,7 +109,14 @@ for ROW in "${SINGLES[@]}"; do
         -div -lamb 0.01 -gamma_consec 0 -t_mode greedy \
         -start_epoch ${LATEST} -epoch_step 1 \
         -i "${RT_DIR}" -o "${STAGE}" 2>&1 | tail -1
-    cp "${STAGE}/test_result.txt" "${PT_DIR}/test_result_small_gridorder.txt"
+    if [ -s "${STAGE}/test_result.txt" ]; then
+      cp "${STAGE}/test_result.txt" "${PT_DIR}/test_result_small_gridorder.txt"
+      echo "    ✓ wrote ${PT_DIR}/test_result_small_gridorder.txt ($(wc -c < ${PT_DIR}/test_result_small_gridorder.txt) bytes)"
+    else
+      echo "    ✗ FAIL small — main_pt.py produced empty or missing test_result.txt"
+    fi
+  else
+    echo "  → small-matrix  SKIP (KuaiRec_small_eval/${DISPLAY} not found)"
   fi
 done
 
