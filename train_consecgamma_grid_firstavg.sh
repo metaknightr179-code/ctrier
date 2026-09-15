@@ -30,6 +30,18 @@
 # temperature -soft_order_temp 1.0. The SCORE penalty (-lmd_consec) is an
 # inference knob and is left at its default 0 during training.
 #
+# THIRD grid (softo* dirs, 2026-09-15+) — FIXED soft selection:
+#   The order* checkpoints above were trained with pi = softmax(Q/T) where Q
+#   is already a probability-scale mixture, so pi stayed near-uniform (top-1
+#   ~1/n) and the loss was a ~constant hinge with a dead gradient (verified:
+#   check_order_gradient.py TOY section). soft_order_loss now uses the
+#   power-annealed pi = Q^(1/T)/Z; -soft_order_temp 1.0 is the CORRECT
+#   default (pi = decoder's own distribution), no flag change needed.
+#   Minimal fixed-loss rerun (gamma=0 control is the canonical lamb001 dir,
+#   weight 0 means the loss is off):
+#     CG_CONFIGS="softo001|0.01 softo005|0.05" \
+#       nohup bash train_consecgamma_grid_firstavg.sh 0 > cg_softo.log 2>&1 &
+#
 # Speed knobs (env overrides):
 #   MAX_EPOCHS=700 PATIENCE=60   ... shorter early stopping
 #   CG_ONLY=type|notype          ... run just one family (2-GPU split below)

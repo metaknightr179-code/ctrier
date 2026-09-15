@@ -50,14 +50,34 @@ FAMILIES=(
 )
 
 # TAG|gamma|DIR_SUFFIX (all six are soft-L_order checkpoints)
-CONFIGS=(
-    "o0|0|lamb001_order0"
-    "o0001|0.001|lamb001_order0001"
-    "o0005|0.005|lamb001_order0005"
-    "o001|0.01|lamb001_order001"
-    "o005|0.05|lamb001_order005"
-    "o01|0.1|lamb001_order01"
-)
+# Override for the FIXED-LOSS minimal rerun (power-annealed pi, see
+# trier_pt.py soft_order_loss + check_order_gradient.py). New checkpoints are
+# trained by:
+#   CG_CONFIGS="softo001|0.01 softo005|0.05" \
+#       bash train_consecgamma_grid_firstavg.sh 0
+# and evaluated with the gamma=0 control mapped to the canonical lamb001 dir
+# (weight 0 = loss off, identical):
+#   CG_CONFIGS="o0|0|lamb001 o001|0.01|lamb001_softo001 o005|0.05|lamb001_softo005" \
+#       bash eval_consecgamma_grid_firstavg.sh
+if [ -n "${CG_CONFIGS:-}" ]; then
+    CONFIGS=( $CG_CONFIGS )
+else
+    CONFIGS=(
+        "o0|0|lamb001_order0"
+        "o0001|0.001|lamb001_order0001"
+        "o0005|0.005|lamb001_order0005"
+        "o001|0.01|lamb001_order001"
+        "o005|0.05|lamb001_order005"
+        "o01|0.1|lamb001_order01"
+    )
+fi
+# Summary points derived from the same grid (passed into the python report).
+CG_POINTS=""
+for CFG in "${CONFIGS[@]}"; do
+    IFS='|' read -r TAG GAMMA SUFFIX <<< "$CFG"
+    CG_POINTS+="${GAMMA},${SUFFIX} "
+done
+export CG_POINTS
 
 get_latest_epoch() {
     ls "${1}"/duorec-*.pth 2>/dev/null | sed 's/.*duorec-//;s/\.pth//' | sort -n | tail -1
@@ -132,12 +152,16 @@ import ast, os
 
 var = os.environ.get("CG_VAR", "kuairec_first_average")
 families = [("type", "save_pt_dense_"), ("notype", "save_pt_notype_dense_")]
-grid = [("0", "lamb001_order0"),
-        ("0.001", "lamb001_order0001"),
-        ("0.005", "lamb001_order0005"),
-        ("0.01", "lamb001_order001"),
-        ("0.05", "lamb001_order005"),
-        ("0.1", "lamb001_order01")]
+spec = os.environ.get("CG_POINTS", "").strip()
+if spec:
+    grid = [tuple(p.split(",", 1)) for p in spec.split()]
+else:
+    grid = [("0", "lamb001_order0"),
+            ("0.001", "lamb001_order0001"),
+            ("0.005", "lamb001_order0005"),
+            ("0.01", "lamb001_order001"),
+            ("0.05", "lamb001_order005"),
+            ("0.1", "lamb001_order01")]
 keys = ["recall@5_f", "recall@10_f", "recall@20_f",
         "ndcg@5_f", "ndcg@10_f", "ndcg@20_f",
         "ild@20_f", "cc@20_f", "cs@20_f", "MaxRun@20"]

@@ -9,6 +9,7 @@
 # =============================================================================
 
 import math
+import os
 import random
 import numpy as np
 import torch
@@ -634,8 +635,10 @@ class TRIER_PT(nn.Module):
     #   model logits is severed and its gradient w.r.t. model parameters is
     #   zero (verified by check_order_gradient.py). Here we replace the hard
     #   token with a SOFT selection: at each step the expected content vector
-    #   is E[v | Q_s] = sum_j softmax(Q_s / temp)_j v_j, which is a smooth
-    #   function of the generation scores Q_s, hence of the encoder logits.
+    #   is E[v | Q_s] = sum_j pi_s(j) v_j with pi_s = Q_s^(1/temp) / Z (a
+    #   power-annealed version of the decoder's own probability-scale mixture
+    #   score Q_s; T=1 = the mixture itself), a smooth function of the
+    #   generation scores Q_s, hence of the encoder logits.
     # Input: Per-step generation scores output_logit (list of [batch, n_items],
     #   WITH grad_fn), pretrained item content vectors item2vec [n_items, d_v]
     # Output: Scalar loss with a live gradient path to the logits
@@ -643,12 +646,40 @@ class TRIER_PT(nn.Module):
     def soft_order_loss(self, output_logit, item2vec, temp=None, margin=0.5):
         temp = float(getattr(self.args, 'soft_order_temp', 1.0)) if temp is None else float(temp)
         vecs = item2vec.to(self.device)                       # [n_items, d_v], constant
-        scores = torch.stack(output_logit, dim=1)            # [batch, k, n_items]
-        probs = (scores / temp).softmax(dim=-1)              # soft item selection
+        # IMPORTANT: output_logit entries are NOT raw logits. They are the
+        # diverse-decoder selection scores from calculate_score, i.e. a
+        # probability-scale convex mixture (1-lambda) P_rel + lambda P_cov
+        # with entries O(1/n_items). A plain softmax(scores/T) with T=O(1)
+        # maps all entries to ~exp(1/n) ~= 1 and yields a near-uniform
+        # distribution: every expected content vector collapses to the global
+        # item mean and the "push adjacent picks apart" gradient vanishes
+        # (empirically: pi top-1 ~ 1/n instead of concentrating on the
+        # decoder's actual candidates).
+        # Treat the mixture itself as the soft selection distribution and
+        # anneal it with a POWER: pi = score^(1/T) / Z. T=1 reproduces the
+        # decoder's own distribution exactly; T<1 sharpens it. The power is
+        # computed in log-space (softmax(log score / T)), which is numerically
+        # stable and, unlike a temperature on probability-scale inputs,
+        # behaves identically across catalog sizes (3k vs 20k vs 133k items).
+        scores = torch.stack(output_logit, dim=1).clamp_min(1e-12)
+        probs = (scores.log() / temp).softmax(dim=-1)        # [batch, k, n_items]
         exp_vec = torch.matmul(probs, vecs)                  # [batch, k, d_v]
         exp_norm = exp_vec / (exp_vec.norm(dim=-1, keepdim=True) + 1e-8)
         cos_sim = (exp_norm[:, :-1, :] * exp_norm[:, 1:, :]).sum(dim=-1)  # [batch, k-1]
-        return F.relu(cos_sim - margin).mean()
+        loss = F.relu(cos_sim - margin).mean()
+        # Off-by-default diagnostic: SOFTORDER_DEBUG=1 prints the mean top-1
+        # soft-selection mass (1/n_items = uniform = broken) and the mean
+        # adjacent centroid cosine before the hinge, so saturation is
+        # visible in training logs.
+        if os.environ.get("SOFTORDER_DEBUG"):
+            with torch.no_grad():
+                n_items = scores.shape[-1]
+                print(f"[soft_order] T={temp:g} n={n_items} "
+                      f"uniform={1.0/n_items:.2e} "
+                      f"pi_top1={probs.max(dim=-1).values.mean().item():.4f} "
+                      f"centroid_cos_adj={cos_sim.mean().item():.4f} "
+                      f"hinge_loss={loss.item():.6f}", flush=True)
+        return loss
 
 
     # --------------------------

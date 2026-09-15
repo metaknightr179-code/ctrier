@@ -963,15 +963,21 @@ def write_gamma_sweep_tex(variant="kuairec_first_average", lamb=0.01,
         ("PACER",            "save_pt_dense_"),
         (r"TRIER$_{-t}$",    "save_pt_notype_dense_"),
     ]
-    # (gamma_o display, dir suffix)
-    grid = [
-        ("0",     "lamb001_order0"),
-        ("0.001", "lamb001_order0001"),
-        ("0.005", "lamb001_order0005"),
-        ("0.01",  "lamb001_order001"),
-        ("0.05",  "lamb001_order005"),
-        ("0.1",   "lamb001_order01"),
-    ]
+    # (gamma_o display, dir suffix). Override with GAMMA_SWEEP_GRID env,
+    # space-separated "gamma:dirsuf" pairs, for the fixed-loss softo* grid:
+    #   GAMMA_SWEEP_GRID="0:lamb001 0.01:lamb001_softo001 0.05:lamb001_softo005"
+    spec = os.environ.get("GAMMA_SWEEP_GRID", "").strip()
+    if spec:
+        grid = [tuple(p.split(":", 1)) for p in spec.split()]
+    else:
+        grid = [
+            ("0",     "lamb001_order0"),
+            ("0.001", "lamb001_order0001"),
+            ("0.005", "lamb001_order0005"),
+            ("0.01",  "lamb001_order001"),
+            ("0.05",  "lamb001_order005"),
+            ("0.1",   "lamb001_order01"),
+        ]
 
     metric_cols = [
         ("HR@5",   "recall@5_f"),  ("HR@10",  "recall@10_f"),  ("HR@20",  "recall@20_f"),
@@ -1059,8 +1065,9 @@ def write_gamma_sweep_tex(variant="kuairec_first_average", lamb=0.01,
 
     table_str = "\n".join(out_lines)
     if path is None:
+        tag = "softo_" if spec else ""
         path = os.path.join(SCRIPT_DIR,
-            f"gamma_order_sweep_{variant.replace('kuairec_','')}_{proto}.tex")
+            f"gamma_order_sweep_{tag}{variant.replace('kuairec_','')}_{proto}.tex")
     with open(path, "w") as f:
         f.write(table_str + "\n")
     print(f"gamma_o sweep table written: {path}")

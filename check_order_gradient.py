@@ -8,9 +8,11 @@
 #     the gathered vectors are not model parameters, so dL_consec/d(logits)
 #     does not exist -> zero learning signal for the encoder.
 #   * The SOFT order loss L_order replaces the hard token with an expected
-#     content vector E[v|Q_s] = sum_j softmax(Q_s/tau)_j v_j. It has a grad_fn
-#     and produces non-zero gradients on the generation scores and on the
-#     model parameters that produce the logits.
+#     content vector E[v|Q_s] = sum_j pi_s(j) v_j, pi_s = Q_s^(1/T)/Z (the
+#     decoder score is probability-scale, so a second softmax would flatten
+#     it; a power anneal keeps pi concentrated on the actual candidates).
+#     It has a grad_fn and produces non-zero gradients on the generation
+#     scores and on the model parameters that produce the logits.
 #
 # Runs on CPU with a tiny synthetic model — no datasets / checkpoints needed:
 #     python3 check_order_gradient.py
@@ -100,6 +102,57 @@ def norm_of(name):
             return None if g is None else g.norm().item()
     return None
 
+# ---------------------------------------------------------------------------
+# (3) SELECTION CONCENTRATION on probability-scale inputs (the bug the power
+#     formulation fixes). The decoder's Q_s is a probability MIXTURE
+#     (entries ~1/n), not raw logits. Two controlled scenarios over a
+#     1000-item catalog: adjacent steps put 0.5 mass on (S) identical-content
+#     items (a violation L_order must punish) vs (D) mutually orthogonal
+#     items (no violation). A working soft selection must (i) concentrate on
+#     the picks (top-1 ~ 0.5, not 1/n), (ii) report HIGH cos for S and LOW
+#     cos for D, (iii) carry a sizeable gradient to the scores. The OLD
+#     double softmax makes pi near-uniform, so the hinge is the SAME ~0.5
+#     constant for both scenarios with a vanishing gradient.
+# ---------------------------------------------------------------------------
+n_toy = 1000
+g = torch.Generator().manual_seed(1)
+toy_vecs = torch.randn(n_toy, D_VEC, generator=g)
+toy_vecs = torch.nn.functional.normalize(toy_vecs, dim=-1)
+v_A = F.normalize(torch.randn(D_VEC, generator=torch.Generator().manual_seed(2)), dim=0)
+v_B = F.normalize(torch.randn(D_VEC, generator=torch.Generator().manual_seed(3)), dim=0)
+v_B = F.normalize(v_B - (v_B @ v_A) * v_A, dim=0)   # orthogonal to v_A
+toy_vecs[7], toy_vecs[8] = v_A, v_B
+toy_vecs[9] = v_A                                   # item 9 shares content with 7
+
+def toy_scores(peak_prev, peak_curr):
+    q = torch.full((2, n_toy), 0.5 / n_toy)         # probability-scale mixture
+    q[0, peak_prev] = 0.5
+    q[1, peak_curr] = 0.5
+    return q
+
+def toy_pi_old(q):
+    return (q / 1.0).softmax(dim=-1)                # OLD: second softmax
+
+def toy_pi_new(q):
+    return (q.clamp_min(1e-12).log() / 1.0).softmax(dim=-1)  # NEW: power T=1
+
+def toy_loss_grad(q, pi_fn):
+    ql = q.clone().requires_grad_(True)
+    pi = pi_fn(ql)
+    ev = F.normalize(pi @ toy_vecs, dim=-1)
+    cos = (ev[0] * ev[1]).sum()
+    loss = F.relu(cos - 0.5)
+    grad = torch.autograd.grad(loss, ql)[0]
+    with torch.no_grad():
+        top1 = pi.max(dim=-1).values.mean().item()
+    return cos.item(), loss.item(), grad.abs().sum().item(), top1
+
+q_same, q_diff = toy_scores(7, 9), toy_scores(7, 8)
+old_s = toy_loss_grad(q_same, toy_pi_old)
+old_d = toy_loss_grad(q_diff, toy_pi_old)
+new_s = toy_loss_grad(q_same, toy_pi_new)
+new_d = toy_loss_grad(q_diff, toy_pi_new)
+
 rows = [
     ("L_hard value", f"{L_hard.item():.6f}"),
     ("L_hard has grad_fn", f"{L_hard.grad_fn is not None}  ({hard_note})"),
@@ -113,6 +166,16 @@ rows = [
     ("L_soft |grad| on item_embedding.weight", f"{norm_of('item_embedding.weight'):.3e}"),
     ("L_soft |grad| on type_embedding.weight", f"{norm_of('type_embedding.weight'):.3e}"),
     ("L_soft |grad| on trm_encoder (layer 0)", f"{norm_of('trm_encoder.layers.0.linear1.weight'):.3e}"),
+    ("", ""),
+    ("TOY: uniform mass 1/n", f"{1.0/n_toy:.4f}"),
+    ("TOY OLD: pi top-1 | cos S / cos D",
+     f"{old_s[3]:.4f} | {old_s[0]:.4f} / {old_d[0]:.4f}  (identical -> blind)"),
+    ("TOY NEW: pi top-1 | cos S / cos D",
+     f"{new_s[3]:.4f} | {new_s[0]:.4f} / {new_d[0]:.4f}  (high S, low D)"),
+    ("TOY OLD: hinge S / hinge D | |dL/dQ|",
+     f"{old_s[1]:.4f} / {old_d[1]:.4f} | {old_s[2]:.2e}  (constant, ~no signal)"),
+    ("TOY NEW: hinge S / hinge D | |dL/dQ|",
+     f"{new_s[1]:.4f} / {new_d[1]:.4f} | {new_s[2]:.2e}  (penalizes S only)"),
 ]
 w = max(len(a) for a, _ in rows)
 print("=" * 74)
@@ -127,7 +190,13 @@ for a, b in rows:
 ok = (n_hard_none == n_params and hard_param_norm == 0.0
       and L_soft.grad_fn is not None and g_score.norm().item() > 0
       and norm_of("item_embedding.weight") > 0
-      and norm_of("trm_encoder.layers.0.linear1.weight") > 0)
+      and norm_of("trm_encoder.layers.0.linear1.weight") > 0
+      # NEW pi concentrates on the actual picks and separates the scenarios
+      and new_s[3] > 0.4 and new_s[0] > 0.7 and new_d[0] < 0.3
+      # OLD pi is near-uniform: cannot tell violation from non-violation
+      and old_s[3] < 0.01 and abs(old_s[0] - old_d[0]) < 0.15
+      # NEW loss carries orders of magnitude more score gradient
+      and new_s[2] > 10 * old_s[2])
 print("=" * 74)
 print("NOTE: type_embedding grad is 0 here only because the synthetic model "
       "loads no category map; with real data the type rows are connected too.")
