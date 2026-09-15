@@ -37,8 +37,9 @@
 #   check_order_gradient.py TOY section). soft_order_loss now uses the
 #   power-annealed pi = Q^(1/T)/Z; -soft_order_temp 1.0 is the CORRECT
 #   default (pi = decoder's own distribution), no flag change needed.
-#   Minimal fixed-loss rerun (gamma=0 control is the canonical lamb001 dir,
-#   weight 0 means the loss is off):
+#   Minimal fixed-loss rerun trains ONLY the nonzero points; gamma=0 is
+#   skipped by the guard below and reuses the existing lamb001_order0
+#   checkpoint (same -soft_order_loss flags, weight 0 = loss absent):
 #     CG_CONFIGS="softo001|0.01 softo005|0.05" \
 #       nohup bash train_consecgamma_grid_firstavg.sh 0 > cg_softo.log 2>&1 &
 #
@@ -106,6 +107,16 @@ for FAM in "${FAMILIES[@]}"; do
   IFS='|' read -r FAM_NAME DIR_MID TYPE_FLAG <<< "$FAM"
   for CFG in "${CONFIGS[@]}"; do
     IFS='|' read -r SUFFIX GAMMA <<< "$CFG"
+    # gamma_o=0 means L_order is absent: the EXACT objective already has a
+    # trained checkpoint (save_pt_{notype_}dense_lamb001_order0_<variant>;
+    # the loss value is multiplied by weight 0, so it is identical under the
+    # fixed-loss code). Never retrain it — the eval maps the zero row to that
+    # dir. ALLOW_ZERO=1 overrides (e.g. a deliberately fresh control seed).
+    if [ "$(awk "BEGIN{print (${GAMMA}==0)}")" = "1" ] && [ "${ALLOW_ZERO:-0}" != "1" ]; then
+        echo "SKIP gamma_o=0 (${SUFFIX}): reuse the existing zero-weight checkpoint;"
+        echo "      eval maps the zero row via CG_CONFIGS, e.g. o0|0|lamb001_order0"
+        continue
+    fi
     for VAR in "${VARIANTS[@]}"; do
         pt_dir="save_pt_${DIR_MID}dense_lamb001_${SUFFIX}_${VAR}"
         pt_log="pt_dense_lamb001_${SUFFIX}_${FAM_NAME}_${VAR}.log"

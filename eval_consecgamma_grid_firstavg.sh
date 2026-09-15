@@ -55,9 +55,10 @@ FAMILIES=(
 # trained by:
 #   CG_CONFIGS="softo001|0.01 softo005|0.05" \
 #       bash train_consecgamma_grid_firstavg.sh 0
-# and evaluated with the gamma=0 control mapped to the canonical lamb001 dir
-# (weight 0 = loss off, identical):
-#   CG_CONFIGS="o0|0|lamb001 o001|0.01|lamb001_softo001 o005|0.05|lamb001_softo005" \
+# and evaluated with the gamma=0 control mapped to the EXISTING zero-weight
+# checkpoint lamb001_order0 (same flags, weight 0 = loss absent; never
+# retrained — the train script hard-skips gamma=0):
+#   CG_CONFIGS="o0|0|lamb001_order0 o001|0.01|lamb001_softo001 o005|0.05|lamb001_softo005" \
 #       bash eval_consecgamma_grid_firstavg.sh
 if [ -n "${CG_CONFIGS:-}" ]; then
     CONFIGS=( $CG_CONFIGS )
