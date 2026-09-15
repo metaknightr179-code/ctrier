@@ -847,25 +847,84 @@ def write_sixcell_tex(outdir, variant="kuairec_first_average", lamb=0.01,
 
     rows_data = []
     missing = []
+
+    def find_cell_results(cell_dir, suffix):
+        """Return list of metric-dicts found in cell_dir, one per PT dir/seed.
+
+        eval_sixcell_3seed.sh writes files with naming:
+          legacy seed 0:   test_result{suffix}.txt
+          seed N (N>0):    test_result{suffix}_seedN.txt
+        Falls back to older conventions (_gridorder, bare test_result.txt) so
+        running analyze on the legacy single-seed eval still works.
+        """
+        out = []
+        # Multi-seed patterns: test_result{suffix}_seed*.txt
+        seed_patterns = sorted(glob.glob(
+            os.path.join(cell_dir, f"test_result{suffix}_seed*.txt")))
+        # Also test_result{suffix}_seed (no N) just in case
+        seed_patterns += sorted(glob.glob(
+            os.path.join(cell_dir, f"test_result{suffix}_seed")))
+        # Legacy single-seed conventions (include all)
+        legacy_patterns = [
+            os.path.join(cell_dir, f"test_result{suffix}.txt"),
+            os.path.join(cell_dir, f"test_result{suffix}_gridorder.txt"),
+            os.path.join(cell_dir, "test_result.txt"),
+            os.path.join(cell_dir, "test_result_gridorder.txt"),
+        ]
+        files = list(seed_patterns)
+        for lp in legacy_patterns:
+            if os.path.exists(lp) and lp not in files:
+                files.append(lp)
+        for fp in files:
+            d = parse_dict_result(fp)
+            if d is not None:
+                out.append((fp, d))
+        return out
+
     for label, dirname, has_content, has_orderloss, has_orderscore, qn in cells:
-        fpath = os.path.join(outdir, dirname, f"test_result{suffix}.txt")
-        data = parse_dict_result(fpath)
-        if data is None:
-            missing.append(fpath)
-            rows_data.append((label, has_content, has_orderloss, has_orderscore, qn, None))
-        else:
-            rows_data.append((label, has_content, has_orderloss, has_orderscore, qn, data))
+        cell_dir = os.path.join(outdir, dirname)
+        found = find_cell_results(cell_dir, suffix)
+        if not found:
+            missing.append(cell_dir)
+            rows_data.append((label, has_content, has_orderloss, has_orderscore, qn, None, 0))
+            continue
+
+        # Aggregate across seeds (n >= 1)
+        n = len(found)
+        agg = {}
+        per_seed_per_metric = {m: [] for _, m in metric_cols}
+        for fp, d in found:
+            for _, m in metric_cols:
+                v = get_metric(d, m)
+                if v is not None:
+                    per_seed_per_metric[m].append(v)
+
+        for _, m in metric_cols:
+            vals = per_seed_per_metric[m]
+            if not vals:
+                agg[m] = (None, None)
+            elif len(vals) == 1:
+                agg[m] = (vals[0], None)   # single seed → no std
+            else:
+                mean = sum(vals) / len(vals)
+                pop_std = (sum((v - mean) ** 2 for v in vals) / len(vals)) ** 0.5
+                agg[m] = (mean, pop_std)
+
+        rows_data.append((label, has_content, has_orderloss, has_orderscore, qn, agg, n))
 
     if missing:
-        print(f"\n⚠  Six-cell ablation: MISSING {len(missing)} result files — run "
-              f"CUDA_VISIBLE_DEVICES=0 bash eval_sixcell_ablation_kuairec.sh first.\n"
-              f"   Missing examples: {missing[0]}")
+        print(f"\n⚠  Six-cell ablation: MISSING {len(missing)} cell directories: {missing}")
 
     def yn(b): return "\\checkmark" if b else "—"
 
-    def fmt(v):
-        if v is None: return "\\textemdash"
-        return f"{v:.4f}"
+    def fmt_mean_std(mean_std):
+        mean, std = mean_std
+        if mean is None:
+            return "\\textemdash"
+        if std is None or std == 0.0:
+            return f"{mean:.4f}"
+        # Format: mean±std, auto-scale precision so std is visible
+        return f"{mean:.4f}\\pm{std:.4f}"
 
     # Build LaTeX
     out_lines = [
@@ -897,10 +956,15 @@ def write_sixcell_tex(outdir, variant="kuairec_first_average", lamb=0.01,
         r" & & & & & " + " & ".join(r"\scriptsize " + mc[0] for mc in metric_cols) + r" \\",
         r"\midrule",
     ]
-    for label, has_content, has_orderloss, has_orderscore, qn, data in rows_data:
-        vals = " & ".join(fmt(get_metric(data, m)) for _, m in metric_cols)
+    for label, has_content, has_orderloss, has_orderscore, qn, agg, n in rows_data:
+        if agg is None:
+            vals = " & ".join("\\textemdash" for _ in metric_cols)
+        else:
+            vals = " & ".join(fmt_mean_std(agg.get(m, (None, None)))
+                             for _, m in metric_cols)
+        tag = f" [{n} seeds]" if n > 0 else " [MISSING]"
         out_lines.append(
-            f"{label} & {yn(has_content)} & {yn(has_orderloss)} & {yn(has_orderscore)} & {qn} & {vals} \\\\"
+            f"{label} & {yn(has_content)} & {yn(has_orderloss)} & {yn(has_orderscore)} & {qn}{tag} & {vals} \\\\"
         )
     out_lines += [
         r"\bottomrule",
@@ -929,11 +993,21 @@ def write_sixcell_tex(outdir, variant="kuairec_first_average", lamb=0.01,
     header = f"{'Model':<12} {'C':>3} {'L':>3} {'S':>3} " + " ".join(f"{mc[0]:>10}" for mc in metric_cols)
     print(header)
     print("-" * len(header))
-    for label, has_content, has_orderloss, has_orderscore, qn, data in rows_data:
-        vals = " ".join(f"{get_metric(data, m):>10.4f}" if get_metric(data, m) is not None else f"{'MISS':>10}"
-                        for _, m in metric_cols)
+    for label, has_content, has_orderloss, has_orderscore, qn, agg, n in rows_data:
+        def _fmt_m(m):
+            if agg is None or agg.get(m) is None:
+                return f"{'MISS':>10}"
+            mean, std = agg[m]
+            if mean is None:
+                return f"{'MISS':>10}"
+            if std is None or std == 0.0:
+                return f"{mean:>10.4f}"
+            return f"{mean:>7.4f}±{std:.4f}"
+        vals = " ".join(_fmt_m(m) for _, m in metric_cols)
         mark = lambda b: "✓" if b else "—"
-        print(f"{label:<12} {mark(has_content):>3} {mark(has_orderloss):>3} {mark(has_orderscore):>3} {vals}")
+        ntag = f"[{n}]" if n > 0 else "[MIS]"
+        print(f"{label:<12} {mark(has_content):>3} {mark(has_orderloss):>3} "
+              f"{mark(has_orderscore):>3} {ntag:>5} {vals}")
     print("=" * 100)
 
     return table_str
