@@ -21,6 +21,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 from matplotlib.patches import FancyArrowPatch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -139,57 +140,69 @@ for fam in ORDER:
 ax.set_xlabel("CS@20  (mean adjacent cosine, ↓ better)", labelpad=3)
 ax.set_ylabel("NDCG@20  (↑ better)", labelpad=3)
 
-# symlog x-axis: linear for |CS| < 0.01, log beyond.
-# This spreads out the dense cluster at CS ∈ [0, 0.02] while still showing
-# the λ=0 points at CS ≈ 0.08–0.17 cleanly on the same axis.
-import matplotlib.ticker as mticker
-ax.set_xscale("symlog", linthresh=0.01, linscale=0.6)
-ax.set_xlim(-0.002, max(all_xs) * 1.25)
+# TIGHT linear x-axis on the repair region. The λ_c=0 outlier points sit at
+# CS ∈ [0.08, 0.17] (far right) and are NOT drawn on the main plot — instead
+# we show them as dashed lead-in arrows so the *repair dynamics* (the actual
+# story) are not compressed into invisibility.
+X_MAX = 0.025   # covers all λ≥0.001 points with room to breathe
+ax.set_xlim(0, X_MAX)
 
-# y-axis: tight
-y_lo, y_hi = min(all_ys), max(all_ys)
-y_margin = (y_hi - y_lo) * 0.10
+# y-axis: tight on the NDCG range of the plotted points
+# Exclude the extreme TRIER-L λ=0 NDCG=0.0670 outlier when computing range
+# (we don't plot it on-axis anyway)
+plotted_ys = []
+for fam in ORDER:
+    pts = FAMILIES[fam]
+    plotted_ys.extend([p[1] for p in pts if p[2] <= X_MAX])
+y_lo, y_hi = min(plotted_ys), max(plotted_ys)
+y_span = y_hi - y_lo
+y_margin = y_span * 0.15
 ax.set_ylim(y_lo - y_margin, y_hi + y_margin)
 
-# custom x-ticks — show clean labels across the symlog break
-ax.set_xticks([0, 0.001, 0.005, 0.01, 0.05, 0.1])
-ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.3g"))
+# x-ticks — clean, readable
+ax.set_xticks([0, 0.005, 0.01, 0.015, 0.02])
+ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.3f"))
 
-# grid — both major + minor so symlog looks intentional
-ax.grid(True, linestyle=":", alpha=0.4, zorder=0, which="both")
+# grid
+ax.grid(True, linestyle=":", alpha=0.4, zorder=0)
 ax.tick_params(axis="both", which="major", pad=1)
-ax.tick_params(axis="x", which="minor", length=1.5)
 
 # spines
 for spine in ["top", "right"]:
     ax.spines[spine].set_visible(False)
 
+# ── λ=0 LEAD-IN ARROWS ───────────────────────────────────────────────────
+# For each family, draw a thin dashed arrow that starts at the right edge of
+# the plot (X_MAX, that family's last-plotted-point NDCG) and goes to the
+# actual λ=0 location (CS=x0, NDCG=y0). Arrow label says "λ=0".
+# This communicates that the pre-penalty state is further right than shown.
+from matplotlib.patches import FancyArrowPatch as FAP
+for fam in ORDER:
+    pts = FAMILIES[fam]
+    x0, y0 = pts[0][2], pts[0][1]          # λ_c=0  (off-axis, far right)
+    # find the rightmost point we *do* plot (largest CS ≤ X_MAX)
+    plotted = [(p[2], p[1]) for p in pts if p[2] <= X_MAX]
+    if not plotted:
+        continue
+    x_plot, y_plot = plotted[-1]            # e.g. (0.02, NDCG at λ=0.1)
+    color = PANEL_HIGHLIGHT[fam]
+
+    # Dashed connector from (X_MAX, y_plot) → (x0, y0), clipped by xlim
+    # We'll manually clip it by only drawing up to X_MAX
+    ax.annotate("",
+                xy=(x0, y0),                # λ=0 destination (off-axis right)
+                xytext=(X_MAX, y_plot),       # start at right edge of plot
+                xycoords="data",
+                arrowprops=dict(arrowstyle="-",
+                                color=color,
+                                lw=0.8,
+                                linestyle="--",
+                                alpha=0.7))
+    # tiny text at (X_MAX + 0.0005, y_plot) saying "λ=0→"
+    ax.text(X_MAX + 0.0002, y_plot, "λ=0→", fontsize=5,
+            color=color, va="center", style="italic")
+
 # ── Legend + direction hint + title — stacked, non-overlapping ──────────
-# Plot area uses top=0.70 of figure height. Everything above that is
-# figure-level annotation in the empty band [0.70, 1.00].
-
-# 1. Legend: flat row right at top of the empty band
-#    We use fig.legend (not ax.legend) so it sits in figure coords cleanly.
-leg = fig.legend(labels=ORDER, loc="upper center",
-                 bbox_to_anchor=(0.5, 0.975),
-                 ncol=4, frameon=False, fontsize=7,
-                 handlelength=1.2, handletextpad=0.5, columnspacing=1.5)
-
-# 2. Arrow direction hint — below legend, still well above plot
-from matplotlib.patches import FancyArrowPatch
-# Use figure fraction coords so it stays aligned regardless of plot layout
-arrow = FancyArrowPatch((0.02, 0.90), (0.08, 0.90),
-                         transform=fig.transFigure,
-                         arrowstyle="-|>", color="gray", lw=0.9,
-                         mutation_scale=9, figure=fig)
-fig.patches.append(arrow)
-fig.text(0.095, 0.895, "λ_c increases  →", fontsize=6, color="gray",
-         va="center", style="italic")
-
-# 3. Super title — below the arrow hint, clearly separated
-fig.text(0.5, 0.855,
-         "Pareto trade-off between repetition (CS@20) and ranking quality (NDCG@20)",
-         ha="center", fontsize=7, style="italic")
 
 out_path = os.path.join(OUT, "lambda_c_pareto.pdf")
 fig.savefig(out_path, bbox_inches="tight", facecolor="white")
