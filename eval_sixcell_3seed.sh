@@ -25,6 +25,9 @@ SEEDS=${SEEDS:-"1 2"}
 OUTDIR=./sixcell_firstavg_3seed
 mkdir -p ${OUTDIR}/staging ${OUTDIR}/stats
 
+CATE=kuairec_cate.txt
+VEC=KuaiRec_variants/kuairec_vec.npy
+
 NEG_BIG="${DIR}/KuaiRec-random-sample_size=99-seed=4444.txt"
 NEG_SMALL="./KuaiRec_small_eval/${VAR}/KuaiRec-random-sample_size=99-seed=4444.txt"
 HAS_SMALL=""
