@@ -1,0 +1,56 @@
+% ========================================================================
+% Abstract
+% ========================================================================
+\begin{abstract}
+Short-video sequential recommendation must predict a user's next interest
+while simultaneously avoiding consecutive runs of highly similar items ---
+a form of positional repetition that standard set-level diversity metrics
+such as ILD fail to express. TRIER, a strong recent baseline for this task,
+relies purely on learned ID embeddings and has no mechanism to bias the
+scoring function towards locally diverse orderings. We propose PACER, a
+two-stage extension of TRIER that augments item representations with
+lightweight content embeddings at scoring time, then regularises the
+greedy decoder with a differentiable expected-adjacent-risk objective at
+training time and a small positional penalty $\lambda_c$ at inference.
+Across four KuaiRec user-group partitions plus ML-1M, KuaiRand1K and
+MicroLens, PACER (with $\gamma_o=0$ and $\lambda_c=0.01$) reduces
+consecutive-item similarity CS@20 by 3--4$\times$ over plain TRIER on every
+KuaiRec variant, drops MaxRun@20 from 12.7 to 1.0 on KuaiRec
+First-Average (perfect local diversity), and improves NDCG@20 over the
+same plain TRIER baseline on all four datasets. At the accuracy level,
+PACER is the best performing TRIER-family model on ML-1M (HR@20=0.2736,
+NDCG@20=0.1088) and the second-best on every KuaiRec variant. These results
+indicate that a content-augmented scoring function paired with a
+training-free positional penalty is a practical way to improve local-order
+diversity without sacrificing recommendation accuracy.
+\end{abstract}
+
+
+% ========================================================================
+% Conclusion
+% ========================================================================
+\begin{conclusion}
+This paper investigated how short-video sequential recommendation can be
+made less repetitive without compromising next-item accuracy. We introduced
+PACER, which augments TRIER's purely-ID scoring with content embeddings,
+adds a differentiable expected-adjacent-risk loss at training time, and
+applies a small positional penalty $\lambda_c$ at inference. The most
+stable finding across seven datasets is that PACER cuts consecutive-item
+similarity CS@20 by a factor of 3--4 over the plain TRIER baseline
+(0.0000 on KuaiRec First-Average with MaxRun@20=1.0, 0.074--0.094 on the
+other three KuaiRec variants), while remaining the top TRIER-family model
+on ML-1M accuracy. The trade-off is dataset-dependent: ML-1M, with its
+coarser 18-way category vocabulary, shows elevated raw repetition that
+requires a larger $\lambda_c$; KuaiRand1K and MicroLens, though sparse,
+still exhibit well-behaved ILD and CC scores, indicating that the
+content-augmented architecture does not collapse even under data scarcity.
+Several limitations follow from the work: all evaluation is offline,
+so we cannot draw conclusions about user satisfaction, session retention,
+or long-term well-being; the choice of $\lambda_c$ currently relies on a
+small grid sweep, which a production deployment would need to automate
+per dataset; and we have not yet tested PACER on non-sequential or
+multi-task recommendation settings. The natural next step is an online
+A/B on KuaiRand, comparing plain TRIER, PACER without $\lambda_c$, and
+PACER with the dataset-tuned penalty, to measure watch-through and
+completion-rate differences under controlled conditions.
+\end{conclusion}
