@@ -2,33 +2,49 @@
 # =============================================================================
 # Single-config per-dataset retrain — BEST CONFIG from the KuaiRec γ sweep.
 #
-# γ sweep on KuaiRec: NDCG@20 peak at γ_o=0 (no L_order), λ=0.01, dense CE.
-# So this script retrains exactly that config (γ=0 = no -soft_order_loss flag)
-# on ML1M, KuaiRand1K, MicroLens — one dataset at a time — sequentially on a
+# γ sweep on kuairec_first_average: NDCG@20 peak at γ_o=0 (no L_order),
+# λ=0.01, dense CE. So this script retrains exactly that config (γ=0 = no
+# -soft_order_loss flag) on every dataset/variant, one at a time, on a
 # single GPU. RT checkpoint is a prerequisite and is retrained if missing.
 #
 # Pipeline per dataset:
 #   Stage 1: RT (save_rt_fix_<DS>) — skipped if DONE exists.
 #   Stage 2: PT dense -div -lamb 0.01 (no L_order) — PACER = type family.
 #
+# Supported DATASET values:
+#   ML1M, KuaiRand1K, MicroLens                 (new datasets, own vocab)
+#   kuairec_first_average        (already has γ=0 — will skip automatically)
+#   kuairec_first_individual     (newly requested)
+#   kuairec_highest_average      (newly requested)
+#   kuairec_highest_individual   (newly requested)
+#
 # Usage (ONE dataset at a time — single GPU):
-#   nohup bash train_bestconfig_newds.sh 0 ML1M          > best_ml1m.log 2>&1 &
-#   nohup bash train_bestconfig_newds.sh 0 KuaiRand1K   > best_kui.log   2>&1 &
-#   nohup bash train_bestconfig_newds.sh 0 MicroLens    > best_micro.log 2>&1 &
+#   nohup bash train_bestconfig_newds.sh 0 ML1M                      > best_ml1m.log 2>&1 &
+#   nohup bash train_bestconfig_newds.sh 0 KuaiRand1K               > best_kui.log   2>&1 &
+#   nohup bash train_bestconfig_newds.sh 0 MicroLens                > best_micro.log 2>&1 &
+#   nohup bash train_bestconfig_newds.sh 0 kuairec_first_individual > best_fi.log    2>&1 &
+#   nohup bash train_bestconfig_newds.sh 0 kuairec_highest_average  > best_ha.log    2>&1 &
+#   nohup bash train_bestconfig_newds.sh 0 kuairec_highest_individual > best_hi.log  2>&1 &
 # =============================================================================
 set -u
 GPU=${1:?Usage: train_bestconfig_newds.sh <GPU_ID> <DATASET>}
-DS=${2:?DATASET must be ML1M, KuaiRand1K or MicroLens}
+DS=${2:?DATASET must be one of: ML1M KuaiRand1K MicroLens kuairec_first_average kuairec_first_individual kuairec_highest_average kuairec_highest_individual}
 
 case "$DS" in
-  ML1M)       N=3126;  NCAT=18; DIR=./ML1M;       CATE=ml1m_cate.txt;       VEC=ml1m_vec.npy;        NEG="ML1M-random-sample_size=99-seed=4444.txt" ;;
-  KuaiRand1K) N=20001; NCAT=44; DIR=./KuaiRand1K; CATE=kuairand_cate.txt;   VEC=kuairand_vec.npy;    NEG="KuaiRand-random-sample_size=99-seed=4444.txt" ;;
-  MicroLens)  N=26923; NCAT=57; DIR=./MicroLens;  CATE=microlens_cate.txt;  VEC=microlens_vec.npy;   NEG="MicroLens-random-sample_size=99-seed=4444.txt" ;;
+  # --- New datasets (own vocab/cat counts, own vec file inside DIR) ---
+  ML1M)       N=3126;  NCAT=18; DIR=./ML1M;       CATE=ml1m_cate.txt;       VEC=./ML1M/ml1m_vec.npy;        NEG="ML1M-random-sample_size=99-seed=4444.txt" ;;
+  KuaiRand1K) N=20001; NCAT=44; DIR=./KuaiRand1K; CATE=kuairand_cate.txt;   VEC=./KuaiRand1K/kuairand_vec.npy;   NEG="KuaiRand-random-sample_size=99-seed=4444.txt" ;;
+  MicroLens)  N=26923; NCAT=57; DIR=./MicroLens;  CATE=microlens_cate.txt;  VEC=./MicroLens/microlens_vec.npy;  NEG="MicroLens-random-sample_size=99-seed=4444.txt" ;;
+  # --- KuaiRec variants (shared 10728 vocab + 31 cats, shared vec at KuaiRec_variants/) ---
+  kuairec_first_average)        N=10728; NCAT=31; DIR=./KuaiRec_variants/${DS}; CATE=kuairec_cate.txt; VEC=./KuaiRec_variants/kuairec_vec.npy; NEG="KuaiRec-random-sample_size=99-seed=4444.txt" ;;
+  kuairec_first_individual)     N=10728; NCAT=31; DIR=./KuaiRec_variants/${DS}; CATE=kuairec_cate.txt; VEC=./KuaiRec_variants/kuairec_vec.npy; NEG="KuaiRec-random-sample_size=99-seed=4444.txt" ;;
+  kuairec_highest_average)      N=10728; NCAT=31; DIR=./KuaiRec_variants/${DS}; CATE=kuairec_cate.txt; VEC=./KuaiRec_variants/kuairec_vec.npy; NEG="KuaiRec-random-sample_size=99-seed=4444.txt" ;;
+  kuairec_highest_individual)   N=10728; NCAT=31; DIR=./KuaiRec_variants/${DS}; CATE=kuairec_cate.txt; VEC=./KuaiRec_variants/kuairec_vec.npy; NEG="KuaiRec-random-sample_size=99-seed=4444.txt" ;;
   *) echo "Unknown DATASET: $DS"; exit 1 ;;
 esac
 
 RT_OUT="save_rt_fix_${DS}"
-PT_OUT="save_pt_dense_lamb001_order0_${DS}"     # name mirrors KuaiRec family dirs
+PT_OUT="save_pt_dense_lamb001_order0_${DS}"
 
 echo "############################################################"
 echo "# BEST-CONFIG RETRAIN (γ=0, dense PACER) — ${DS}"
@@ -39,7 +55,7 @@ echo "############################################################"
 
 # ---------------- Guard: data files ----------------
 for f in "${DIR}/train-v0.txt" "${DIR}/valid-v0.txt" "${DIR}/test-v0.txt" \
-         "${DIR}/${CATE}" "${DIR}/${VEC}" "${DIR}/${NEG}"; do
+         "${DIR}/${CATE}" "${VEC}" "${DIR}/${NEG}"; do
   if [ ! -f "$f" ]; then
     echo "ERROR: missing data file $f"; exit 1
   fi
@@ -93,7 +109,7 @@ fi
 CUDA_VISIBLE_DEVICES=${GPU} python3 main_pt.py \
     -tf ${DIR}/train-v0.txt -vf ${DIR}/valid-v0.txt -ef ${DIR}/test-v0.txt \
     -vn ${DIR}/${NEG} -en ${DIR}/${NEG} \
-    -cat ${DIR}/${CATE} -vec ${DIR}/${VEC} \
+    -cat ${DIR}/${CATE} -vec ${VEC} \
     -n ${N} -n_cat ${NCAT} -m train -e 1000 -b 256 -l 1e-3 \
     -dense -div -lamb 0.01 \
     -t_mode topk -early_stop -patience 100 -min_delta 0.0001 \
