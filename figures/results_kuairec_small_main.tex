@@ -1,0 +1,83 @@
+% ========================================================================
+% KuaiRec Variants — Main Metrics (Accuracy + Diversity, small-matrix)
+% Grouped: Highest-Individual / Highest-Average / First-Individual / First-Average
+% Split: this file = HR/NDCG/ILD/CC (Acc+Div)
+% Companion file: results_kuairec_small_consec.tex = CS/MR (Sim+Run)
+% ========================================================================
+\begin{table*}[t]
+\centering
+\caption{Overall comparison on four KuaiRec user-group partitions (small-matrix protocol).
+Best results are in \textbf{bold}, second-best in \underline{underline}.
+SASRec diversity metrics are unavailable (no item-content scoring).
+Consecutive similarity and MaxRun are in~\cref{tab:results_kuairec_small_consec}.}
+\label{tab:results_kuairec_small_main}
+\begin{tabular}{lllcccc}
+\toprule
+& & & SASRec & GRU4Rec & TRIER (greedy) & PACER (greedy) \\
+\midrule
+\multirow{12}{*}{Highest-Individual}
+ & \multirow{6}{*}{Acc.}
+ & HR@5  & 0.0468 & \textbf{0.1099} & 0.0085 & \underline{0.0718} \\
+ & & HR@10 & 0.0737 & \textbf{0.1517} & 0.0213 & \underline{0.1247} \\
+ & & HR@20 & 0.1006 & \textbf{0.1921} & 0.0425 & \underline{0.1837} \\
+ & & ND@5  & 0.0249 & \textbf{0.0792} & 0.0049 & \underline{0.0558} \\
+ & & ND@10 & 0.0336 & \textbf{0.0926} & 0.0089 & \underline{0.0727} \\
+ & & ND@20 & 0.0403 & \textbf{0.1028} & 0.0142 & \underline{0.0876} \\
+ & \multirow{6}{*}{Div.}
+ & ILD@5  & -- & \underline{1.3452} & \textbf{1.3940} & -- \\
+ & & ILD@10 & -- & \textbf{1.4047} & \underline{1.3812} & -- \\
+ & & ILD@20 & -- & \underline{1.4563} & 1.3901 & \textbf{1.5021} \\
+ & & CC@5   & -- & \underline{0.1555} & \textbf{0.1620} & -- \\
+ & & CC@10  & -- & \textbf{0.2545} & \underline{0.2533} & -- \\
+ & & CC@20  & -- & \underline{0.4006} & 0.3723 & \textbf{0.4332} \\
+\addlinespace[0.3em]
+\multirow{12}{*}{Highest-Average}
+ & \multirow{6}{*}{Acc.}
+ & HR@5  & 0.0468 & \textbf{0.1184} & 0.0050 & \underline{0.0715} \\
+ & & HR@10 & 0.0737 & \textbf{0.1495} & 0.0184 & \underline{0.1244} \\
+ & & HR@20 & 0.1006 & \textbf{0.1977} & 0.0369 & \underline{0.1876} \\
+ & & ND@5  & 0.0249 & \textbf{0.0863} & 0.0020 & \underline{0.0550} \\
+ & & ND@10 & 0.0336 & \textbf{0.0964} & 0.0064 & \underline{0.0719} \\
+ & & ND@20 & 0.0403 & \textbf{0.1086} & 0.0109 & \underline{0.0879} \\
+ & \multirow{6}{*}{Div.}
+ & ILD@5  & -- & \underline{1.3609} & \textbf{1.4261} & -- \\
+ & & ILD@10 & -- & \underline{1.4088} & \textbf{1.4285} & -- \\
+ & & ILD@20 & -- & \underline{1.4418} & 1.4312 & \textbf{1.5371} \\
+ & & CC@5   & -- & \underline{0.1556} & \textbf{0.1661} & -- \\
+ & & CC@10  & -- & \underline{0.2505} & \textbf{0.2575} & -- \\
+ & & CC@20  & -- & \underline{0.3892} & 0.3675 & \textbf{0.4688} \\
+\addlinespace[0.3em]
+\multirow{12}{*}{First-Individual}
+ & \multirow{6}{*}{Acc.}
+ & HR@5  & 0.0468 & \textbf{0.1028} & 0.0142 & \underline{0.0754} \\
+ & & HR@10 & 0.0737 & \textbf{0.1453} & 0.0291 & \underline{0.1318} \\
+ & & HR@20 & 0.1006 & \textbf{0.2084} & 0.0588 & \underline{0.1938} \\
+ & & ND@5  & 0.0249 & \textbf{0.0725} & 0.0072 & \underline{0.0585} \\
+ & & ND@10 & 0.0336 & \textbf{0.0862} & 0.0119 & \underline{0.0767} \\
+ & & ND@20 & 0.0403 & \textbf{0.1021} & 0.0193 & \underline{0.0923} \\
+ & \multirow{6}{*}{Div.}
+ & ILD@5  & -- & \underline{1.3261} & \textbf{1.4614} & -- \\
+ & & ILD@10 & -- & \underline{1.3887} & \textbf{1.4395} & -- \\
+ & & ILD@20 & -- & \underline{1.4449} & 1.4378 & \textbf{1.4901} \\
+ & & CC@5   & -- & \underline{0.1524} & \textbf{0.1718} & -- \\
+ & & CC@10  & -- & \underline{0.2495} & \textbf{0.2622} & -- \\
+ & & CC@20  & -- & \underline{0.3912} & 0.3767 & \textbf{0.4203} \\
+\addlinespace[0.3em]
+\multirow{12}{*}{First-Average}
+ & \multirow{6}{*}{Acc.}
+ & HR@5  & 0.0468 & \textbf{0.1148} & 0.0071 & \underline{0.1148} \\
+ & & HR@10 & 0.0737 & \underline{0.1488} & 0.0177 & \textbf{0.1694} \\
+ & & HR@20 & 0.1006 & \underline{0.2041} & 0.0347 & \textbf{0.2105} \\
+ & & ND@5  & 0.0249 & \textbf{0.0812} & 0.0036 & \underline{0.0768} \\
+ & & ND@10 & 0.0336 & \underline{0.0923} & 0.0069 & \textbf{0.0950} \\
+ & & ND@20 & 0.0403 & \textbf{0.1062} & 0.0112 & \underline{0.1053} \\
+ & \multirow{6}{*}{Div.}
+ & ILD@5  & -- & \underline{1.3744} & \textbf{1.4919} & -- \\
+ & & ILD@10 & -- & \underline{1.4215} & \textbf{1.4795} & -- \\
+ & & ILD@20 & -- & 1.4584 & \underline{1.4692} & \textbf{1.5947} \\
+ & & CC@5   & -- & \underline{0.1580} & \textbf{0.1764} & -- \\
+ & & CC@10  & -- & \underline{0.2572} & \textbf{0.2677} & -- \\
+ & & CC@20  & -- & \underline{0.3947} & 0.3747 & \textbf{0.4370} \\
+\bottomrule
+\end{tabular}
+\end{table*}

@@ -1,0 +1,37 @@
+% ========================================================================
+% KuaiRec Variants — Repetition Metrics (Consecutive Similarity + MaxRun, small-matrix)
+% Grouped: Highest-Individual / Highest-Average / First-Individual / First-Average
+% Split: this file = CS@20 / MR@20 (Sim+Run, K=20 only — singleton eval granularity)
+% Companion file: results_kuairec_small_main.tex = HR/NDCG/ILD/CC (Acc+Div)
+% ========================================================================
+\begin{table*}[t]
+\centering
+\caption{Repetition metrics on four KuaiRec user-group partitions (small-matrix protocol,
+lower is better). CS@$20$ = average cosine similarity of adjacent items in the top-20
+list; MR@$20$ = MaxRun, the longest contiguous run of mutually similar items.
+Only PACER and plain TRIER were evaluated for MaxRun; GRU4Rec has no item-content
+scoring so CS is also unavailable. Accuracy and diversity metrics are
+in~\cref{tab:results_kuairec_small_main}.}
+\label{tab:results_kuairec_small_consec}
+\begin{tabular}{lllcccc}
+\toprule
+& & & SASRec & GRU4Rec & TRIER (greedy) & PACER (greedy) \\
+\midrule
+\multirow{2}{*}{Highest-Individual}
+ & Sim. & CS@20 & -- & 0.2116 & \underline{0.2159} & \textbf{0.0782} \\
+ & Run. & MR@20 & -- & --     & --                  & 2.0863 \\
+\addlinespace[0.3em]
+\multirow{2}{*}{Highest-Average}
+ & Sim. & CS@20 & -- & 0.2316 & \underline{0.1987} & \textbf{0.0744} \\
+ & Run. & MR@20 & -- & --     & --                  & 2.0746 \\
+\addlinespace[0.3em]
+\multirow{2}{*}{First-Individual}
+ & Sim. & CS@20 & -- & 0.2175 & \underline{0.1789} & \textbf{0.0940} \\
+ & Run. & MR@20 & -- & --     & --                  & 2.2125 \\
+\addlinespace[0.3em]
+\multirow{2}{*}{First-Average}
+ & Sim. & CS@20 & -- & 0.2142 & \underline{0.1789} & \textbf{0.0000} \\
+ & Run. & MR@20 & -- & --     & --                  & \textbf{1.0000} \\
+\bottomrule
+\end{tabular}
+\end{table*}
