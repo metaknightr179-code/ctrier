@@ -49,19 +49,27 @@ FAMILIES=(
     "notype|save_pt_notype_dense_|-no_type"
 )
 
-# TAG|gamma|DIR_SUFFIX (all six are soft-L_order checkpoints)
-# Override for the FIXED-LOSS minimal rerun (power-annealed pi, see
-# trier_pt.py soft_order_loss + check_order_gradient.py). New checkpoints are
-# trained by:
-#   CG_CONFIGS="softo001|0.01 softo005|0.05" \
-#       bash train_consecgamma_grid_firstavg.sh 0
-# and evaluated with the gamma=0 control mapped to the EXISTING zero-weight
-# checkpoint lamb001_order0 (same flags, weight 0 = loss absent; never
-# retrained — the train script hard-skips gamma=0):
+# TAG|gamma|DIR_SUFFIX
+# CG_FIXED=1 -> full six-point grid under the FIXED power-annealed loss
+# (matches CG_FIXED=1 on the train side): gamma=0 is the EXISTING
+# lamb001_order0 zero-weight control, the five nonzero rows come from fresh
+# softo* dirs. Run simply:
+#   CG_FIXED=1 bash eval_consecgamma_grid_firstavg.sh
+#
+# CG_CONFIGS still overrides for subsets, e.g. the minimal 3-point rerun:
 #   CG_CONFIGS="o0|0|lamb001_order0 o001|0.01|lamb001_softo001 o005|0.05|lamb001_softo005" \
 #       bash eval_consecgamma_grid_firstavg.sh
 if [ -n "${CG_CONFIGS:-}" ]; then
     CONFIGS=( $CG_CONFIGS )
+elif [ "${CG_FIXED:-0}" = "1" ]; then
+    CONFIGS=(
+        "o0|0|lamb001_order0"
+        "o0001|0.001|lamb001_softo0001"
+        "o0005|0.005|lamb001_softo0005"
+        "o001|0.01|lamb001_softo001"
+        "o005|0.05|lamb001_softo005"
+        "o01|0.1|lamb001_softo01"
+    )
 else
     CONFIGS=(
         "o0|0|lamb001_order0"

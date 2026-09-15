@@ -42,6 +42,10 @@
 #   checkpoint (same -soft_order_loss flags, weight 0 = loss absent):
 #     CG_CONFIGS="softo001|0.01 softo005|0.05" \
 #       nohup bash train_consecgamma_grid_firstavg.sh 0 > cg_softo.log 2>&1 &
+#   Full six-point fixed-loss grid (all five nonzero gammas, CG_FIXED preset;
+#   eval/analyze take the same CG_FIXED=1 / GAMMA_SWEEP_FIXED=1 flag):
+#     CG_ONLY=type   CG_FIXED=1 nohup bash train_consecgamma_grid_firstavg.sh 0 > cg_fix_t.log 2>&1 &
+#     CG_ONLY=notype CG_FIXED=1 nohup bash train_consecgamma_grid_firstavg.sh 1 > cg_fix_n.log 2>&1 &
 #
 # Speed knobs (env overrides):
 #   MAX_EPOCHS=700 PATIENCE=60   ... shorter early stopping
@@ -72,8 +76,17 @@ esac
 # SUFFIX|gamma_o (weight of the differentiable L_order via -lmd_softorder;
 # override with CG_CONFIGS to run a gamma subset). Explicit if/else: a quoted
 # default inside ${CG_CONFIGS:-"..."} stays one element and breaks the loop.
+#
+# CG_FIXED=1 -> full six-point grid under the FIXED power-annealed loss
+# (commit 78dcbfe). Five nonzero points train into fresh softo* dirs; the
+# gamma=0 point is absent here and auto-skipped by the guard below, reusing
+# the existing zero-weight lamb001_order0 checkpoint at eval. The old
+# buggy-loss order* dirs are never overwritten.
 if [ -n "${CG_CONFIGS:-}" ]; then
     CONFIGS=( $CG_CONFIGS )
+elif [ "${CG_FIXED:-0}" = "1" ]; then
+    CONFIGS=( "softo0001|0.001" "softo0005|0.005" "softo001|0.01"
+              "softo005|0.05" "softo01|0.1" )
 else
     CONFIGS=( "order0|0" "order0001|0.001" "order0005|0.005"
               "order001|0.01" "order005|0.05" "order01|0.1" )
@@ -81,7 +94,8 @@ fi
 
 echo "############################################################"
 echo "# gamma_o SOFT L_order weight grid at lambda=0.01, GPU ${GPU}"
-echo "# variants: ${VARIANTS[*]}; training 6 points x 2 families"
+echo "# variants: ${VARIANTS[*]}; ${#CONFIGS[@]} configured point(s) x ${#FAMILIES[@]} families"
+echo "# (gamma_o=0 is always skipped: reuse existing lamb001_order0 at eval)"
 echo "############################################################"
 
 for VAR in "${VARIANTS[@]}"; do

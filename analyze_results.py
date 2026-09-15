@@ -963,13 +963,24 @@ def write_gamma_sweep_tex(variant="kuairec_first_average", lamb=0.01,
         ("PACER",            "save_pt_dense_"),
         (r"TRIER$_{-t}$",    "save_pt_notype_dense_"),
     ]
-    # (gamma_o display, dir suffix). Override with GAMMA_SWEEP_GRID env,
-    # space-separated "gamma:dirsuf" pairs, for the fixed-loss softo* grid
-    # (gamma=0 reuses the existing zero-weight lamb001_order0 checkpoint):
-    #   GAMMA_SWEEP_GRID="0:lamb001_order0 0.01:lamb001_softo001 0.05:lamb001_softo005"
+    # (gamma_o display, dir suffix).
+    #   GAMMA_SWEEP_FIXED=1 -> full six-point grid under the fixed power
+    #     loss (matches CG_FIXED=1 on train/eval); gamma=0 reuses the
+    #     existing lamb001_order0 zero-weight control.
+    #   GAMMA_SWEEP_GRID="gamma:dirsuf ..." -> arbitrary subset override.
+    fixed = os.environ.get("GAMMA_SWEEP_FIXED", "").strip() == "1"
     spec = os.environ.get("GAMMA_SWEEP_GRID", "").strip()
     if spec:
         grid = [tuple(p.split(":", 1)) for p in spec.split()]
+    elif fixed:
+        grid = [
+            ("0",     "lamb001_order0"),
+            ("0.001", "lamb001_softo0001"),
+            ("0.005", "lamb001_softo0005"),
+            ("0.01",  "lamb001_softo001"),
+            ("0.05",  "lamb001_softo005"),
+            ("0.1",   "lamb001_softo01"),
+        ]
     else:
         grid = [
             ("0",     "lamb001_order0"),
@@ -1066,7 +1077,7 @@ def write_gamma_sweep_tex(variant="kuairec_first_average", lamb=0.01,
 
     table_str = "\n".join(out_lines)
     if path is None:
-        tag = "softo_" if spec else ""
+        tag = "softo_" if (spec or fixed) else ""
         path = os.path.join(SCRIPT_DIR,
             f"gamma_order_sweep_{tag}{variant.replace('kuairec_','')}_{proto}.tex")
     with open(path, "w") as f:
