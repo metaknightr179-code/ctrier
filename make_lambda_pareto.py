@@ -106,10 +106,18 @@ ORDER = ["TRIER", "TRIER-C", "TRIER-L", "PACER-Full"]
 fig, ax = plt.subplots(1, 1, figsize=(6.2, 3.8))
 fig.subplots_adjust(left=0.13, right=0.95, top=0.70, bottom=0.18)
 
+# KEY INSIGHT: each family's baseline NDCG at λ=0 differs dramatically
+# (TRIER-L ≈ 0.067, TRIER ≈ 0.097, PACER-Full ≈ 0.127), so plotting absolute
+# NDCG crushes the intra-family ΔNDCG (which is only ±0.001–0.002) to invisibility.
+#
+# Fix: normalize each family's y to ΔNDCG = NDCG(λ) − NDCG(λ=0).
+# Every family starts at y=0 (its own unpenalized baseline), and the full y-axis
+# height shows only the penalty-induced change.
 for fam in ORDER:
     pts = FAMILIES[fam]
+    y_base = pts[0][1]                   # NDCG@20 at λ_c=0 for this family
     xs = [p[2] for p in pts]
-    ys = [p[1] for p in pts]
+    ys = [p[1] - y_base for p in pts]   # ΔNDCG relative to own baseline
     color = PANEL_COLORS[fam]
     hl = PANEL_HIGHLIGHT[fam]
 
@@ -123,40 +131,44 @@ for fam in ORDER:
                     arrowprops=dict(arrowstyle="-|>", color=hl, lw=0.8,
                                     mutation_scale=8))
 
+    # λ=0 ring — now always exactly at (CS_0, 0)
     ax.scatter([xs[0]], [ys[0]], s=22, c="none", zorder=6,
                edgecolors=hl, linewidths=0.8)
 
 # ── Axes ────────────────────────────────────────────────────────────────────
 ax.set_xlabel("CS@20  (mean adjacent cosine, ↓ better)", labelpad=3)
-ax.set_ylabel("NDCG@20  (↑ better)", labelpad=3)
+ax.set_ylabel("Δ NDCG@20 vs λ=0 baseline", labelpad=3)
 
 # X-axis: linear, tight on data range
 x_all = [p[2] for fam in ORDER for p in FAMILIES[fam]]
 ax.set_xlim(-0.005, max(x_all) * 1.08)
 ax.set_xticks([0, 0.02, 0.04, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16])
 
-# y-axis: LOG2 too — same power-of-2 tick pattern as x-axis
-# Find a BASE that produces round-number ticks covering NDCG range ~0.067–0.127.
-# Pick BASE such that BASE * 2^k lands on nice round numbers.
-# BASE = 0.05 → ticks [0.05, 0.10, 0.20, 0.40] — exactly the same pattern as x.
-BASE_Y = 0.05
-MIN_NDCG = min([p[1] for fam in ORDER for p in FAMILIES[fam]])
-MAX_NDCG = max([p[1] for fam in ORDER for p in FAMILIES[fam]])
-k_lo = int(math.floor(math.log(MIN_NDCG / BASE_Y, 2))) - 1
-k_hi = int(math.ceil(math.log(MAX_NDCG / BASE_Y, 2))) + 1
-_y_ticks = [BASE_Y * (2 ** k) for k in range(k_lo, k_hi + 1)]
-# e.g. BASE_Y=0.05 → [0.025, 0.05, 0.10, 0.20, 0.40]
-
-ax.set_yscale("log", base=2)
-ax.set_yticks(_y_ticks)
-def ndcg_fmt(val, pos):
-    return f"{val:.2f}".rstrip("0").rstrip(".")
-ax.yaxis.set_major_formatter(mticker.FuncFormatter(ndcg_fmt))
-ax.yaxis.set_minor_locator(mticker.NullLocator())
-
-y_lo = min(_y_ticks)
-y_hi = max(_y_ticks)
-ax.set_ylim(y_lo * 0.9, y_hi * 1.05)
+# y-axis: ΔNDCG can be + or − (some families gain NDCG when penalty is applied!)
+# Use tight linear limits — span all Δ values with padding
+all_dy = []
+for fam in ORDER:
+    y_base = FAMILIES[fam][0][1]
+    all_dy.extend([p[1] - y_base for p in FAMILIES[fam]])
+y_lo = min(all_dy) - 0.0002
+y_hi = max(all_dy) + 0.0002
+ax.set_ylim(y_lo, y_hi)
+# zero line — important visual anchor
+ax.axhline(0, color="gray", lw=0.6, ls="--", alpha=0.5, zorder=1)
+# y ticks with clean steps
+dy_span = y_hi - y_lo
+if dy_span > 0.003:
+    step = 0.0005
+elif dy_span > 0.001:
+    step = 0.0002
+else:
+    step = 0.0001
+import math
+t_lo = math.floor(y_lo / step) * step
+t_hi = math.ceil(y_hi / step) * step
+y_ticks = [round(t_lo + step * k, 6) for k in range(int((t_hi - t_lo) / step) + 1)]
+ax.set_yticks(y_ticks)
+ax.set_yticklabels([f"{v:+.4f}" for v in y_ticks])   # + sign so increases obvious
 
 ax.grid(True, linestyle=":", alpha=0.4, zorder=0, which="major")
 ax.tick_params(axis="both", which="major", pad=1)

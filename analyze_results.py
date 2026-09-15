@@ -879,6 +879,13 @@ def write_sixcell_tex(outdir, variant="kuairec_first_average", lamb=0.01,
             d = parse_dict_result(fp)
             if d is not None:
                 out.append((fp, d))
+        if not out:
+            # verbose debug
+            print(f"  [sixcell] No parseable results in {cell_dir}/ for suffix='{suffix}'")
+            all_tf = glob.glob(os.path.join(cell_dir, "test_result*.txt")) if os.path.isdir(cell_dir) else []
+            for fp in all_tf:
+                c = open(fp).read().strip()[:80] if os.path.getsize(fp) > 0 else "(empty)"
+                print(f"    found: {fp} ({os.path.getsize(fp)}B) content_head={c!r}")
         return out
 
     for label, dirname, has_content, has_orderloss, has_orderscore, qn in cells:
@@ -1682,15 +1689,17 @@ def write_singletons_tex(proto="big"):
           2. filter by protocol (small = contains "small" in basename; big = no "small")
           3. parse each file; keep newest (mtime) successfully parsed dict
           4. if nothing matches, try the other protocol once (some evals only ran big)
-        This way we pick up result files from eval_singletons.sh, the gamma sweep,
-        penalty sweep, the legacy gridover evals, and any other eval that may
-        have touched the same PT dir — whichever was run last wins.
+
+        Critically, parse the FULL FILE (not just readline) and strip np.float64 wrappers.
+        main_pt.py writes a dict-literal across possibly multiple lines.
         """
         if not os.path.isdir(pt_dir):
+            print(f"  [load_result] DIR MISSING: {pt_dir}")
             return None
 
         all_files = glob.glob(os.path.join(pt_dir, "test_result*.txt"))
         if not all_files:
+            print(f"  [load_result] NO test_result*.txt in {pt_dir}")
             return None
 
         def classify(fp):
@@ -1699,12 +1708,16 @@ def write_singletons_tex(proto="big"):
 
         def try_parse(fp):
             try:
-                with open(fp) as f:
-                    d = ast.literal_eval(f.readline().strip())
+                content = open(fp).read().strip()
+                if not content:
+                    return None
+                content = re.sub(r'np\.float\d*\(([^)]+)\)', r'\1', content)
+                content = re.sub(r'np\.int\d*\(([^)]+)\)', r'\1', content)
+                d = ast.literal_eval(content)
                 if isinstance(d, dict) and len(d) >= 3:
                     return d
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  [load_result] parse fail {fp}: {e}")
             return None
 
         # Primary: match requested proto
@@ -1720,6 +1733,9 @@ def write_singletons_tex(proto="big"):
         if opposite:
             opposite.sort(key=lambda x: os.path.getmtime(x[0]), reverse=True)
             return opposite[0][1]
+        print(f"  [load_result] NO PARSEABLE dict in {pt_dir} (proto={proto})")
+        for fp in all_files:
+            print(f"    tried: {fp} ({os.path.getsize(fp)} bytes)")
         return None
 
     rows = []
