@@ -101,96 +101,77 @@ plt.rcParams.update({
 
 ORDER = ["TRIER", "TRIER-C", "TRIER-L", "PACER-Full"]
 
-fig, axes = plt.subplots(1, 4, figsize=(8.5, 2.6),
-                         sharey=False, sharex=False)
-fig.subplots_adjust(left=0.07, right=0.97, top=0.78, bottom=0.18,
-                    wspace=0.38, hspace=0.0)
+fig, ax = plt.subplots(1, 1, figsize=(5.5, 3.6))
+fig.subplots_adjust(left=0.12, right=0.95, top=0.82, bottom=0.16)
 
-for ax_idx, fam in enumerate(ORDER):
-    ax = axes[ax_idx]
+# We'll collect x/y limits across all families for tight shared axes
+all_xs, all_ys = [], []
+
+for fam in ORDER:
     pts = FAMILIES[fam]
-    xs = [p[2] for p in pts]   # CS@20 (→)
-    ys = [p[1] for p in pts]   # NDCG@20 (↑)
-    labels = [p[0] for p in pts]
+    xs = [p[2] for p in pts]
+    ys = [p[1] for p in pts]
+    all_xs.extend(xs); all_ys.extend(ys)
     color = PANEL_COLORS[fam]
     hl = PANEL_HIGHLIGHT[fam]
 
-    # Draw connected segments with arrow
-    # Plot points (filled circles)
-    ax.scatter(xs, ys, s=28, c=color, zorder=5, edgecolor="white",
-               linewidths=0.5)
+    # thin line connecting all points (lower zorder than points)
+    ax.plot(xs, ys, color=color, lw=0.8, alpha=0.55, zorder=3)
 
-    # Draw line with arrows between consecutive points
-    for i in range(len(xs) - 1):
-        dx = xs[i+1] - xs[i]
-        dy = ys[i+1] - ys[i]
-        # Draw arrow only on the LAST segment of each family (λ_c=0.05 → 0.1)
-        # to keep it clean
-        if i == len(xs) - 2:
-            ax.annotate("", xy=(xs[i+1], ys[i+1]),
-                        xytext=(xs[i], ys[i]),
-                        arrowprops=dict(arrowstyle="-|>",
-                                        color=hl,
-                                        lw=0.9,
-                                        mutation_scale=10))
-        # thin line connecting all points
-        ax.plot([xs[i], xs[i+1]], [ys[i], ys[i+1]],
-                color=color, lw=0.7, alpha=0.6, zorder=3)
+    # small filled circles
+    ax.scatter(xs, ys, s=14, c=color, zorder=5, edgecolor="white",
+               linewidths=0.3, label=fam)
 
-    # Highlight the FIRST point (λ_c=0 — the "frustrated" start)
-    ax.scatter([xs[0]], [ys[0]], s=42, c="none", zorder=6,
-               edgecolors=hl, linewidths=1.0)
-    ax.annotate("λ=0", xy=(xs[0], ys[0]),
-                xytext=(4, 4), textcoords="offset points",
-                fontsize=5, color=hl, fontweight="bold")
+    # arrow on the LAST segment only (direction hint)
+    if len(xs) >= 2:
+        i = len(xs) - 2
+        ax.annotate("", xy=(xs[i+1], ys[i+1]), xytext=(xs[i], ys[i]),
+                    arrowprops=dict(arrowstyle="-|>", color=hl, lw=0.8,
+                                    mutation_scale=8))
 
-    # Highlight the LAST point (λ_c=0.1 — the converged end)
-    ax.scatter([xs[-1]], [ys[-1]], s=42, c="none", zorder=6,
-               edgecolors=hl, linewidths=1.0)
-    ax.annotate("λ=0.1", xy=(xs[-1], ys[-1]),
-                xytext=(-4, -10), textcoords="offset points",
-                fontsize=5, color=hl, fontweight="bold",
-                ha="right")
+    # Highlight λ=0 start point (open ring) — tiny
+    ax.scatter([xs[0]], [ys[0]], s=22, c="none", zorder=6,
+               edgecolors=hl, linewidths=0.8)
 
-    # Axes
-    ax.set_title(fam, fontweight="bold", pad=3)
-    ax.set_xlabel("CS@20 (↓ better)", labelpad=2)
-    if ax_idx == 0:
-        ax.set_ylabel("NDCG@20 (↑ better)", labelpad=2)
+# Axes
+ax.set_xlabel("CS@20 (↓ better)", labelpad=3)
+ax.set_ylabel("NDCG@20 (↑ better)", labelpad=3)
 
-    # x-axis: log scale? No — values are 0 to 0.2. But CS=0.0000 values
-    # will sit at x=0 which is hard to distinguish from x=0.0001.
-    # Use a small xlim to show the dense cluster clearly + show the λ=0 point.
-    # Actually let's just set tight limits
-    ax.set_xlim(-0.005, max(xs) * 1.15 if max(xs) > 0 else 0.01)
+# Tight shared limits with CS=0 visible at left edge
+y_lo, y_hi = min(all_ys), max(all_ys)
+y_margin = (y_hi - y_lo) * 0.10
+ax.set_ylim(y_lo - y_margin, y_hi + y_margin)
 
-    # y-axis: tight
-    y_margin = (max(ys) - min(ys)) * 0.08 if max(ys) > min(ys) else 0.002
-    ax.set_ylim(min(ys) - y_margin, max(ys) + y_margin)
+x_hi = max(all_xs) * 1.10
+ax.set_xlim(-0.005, x_hi if x_hi > 0 else 0.02)
 
-    # grid
-    ax.grid(True, linestyle=":", alpha=0.4, zorder=0)
-    ax.tick_params(axis="both", which="major", pad=1)
+# grid
+ax.grid(True, linestyle=":", alpha=0.4, zorder=0)
+ax.tick_params(axis="both", which="major", pad=1)
 
-    # spines
-    for spine in ["top", "right"]:
-        ax.spines[spine].set_visible(False)
+# spines
+for spine in ["top", "right"]:
+    ax.spines[spine].set_visible(False)
 
-# Super title row: brief note
-fig.text(0.5, 0.91,
-         "Pareto frontier: λ_c (inference-time penalty) trades off repetition (CS@20) for accuracy (NDCG@20)",
-         ha="center", va="center", fontsize=6.5, style="italic")
+# Legend: outside panel, centered above, no frame, tiny font
+ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.28),
+          ncol=4, frameon=False, fontsize=6, handletextpad=0.5,
+          columnspacing=1.2)
 
-# Arrow legend: arrow direction = increasing λ_c
-# Use a FancyArrowPatch positioned in figure coordinates
+# Arrow direction hint (gray figure-text annotation)
 from matplotlib.patches import FancyArrowPatch
-arrow = FancyArrowPatch((0.02, 0.86), (0.07, 0.86),
-                         transform=fig.transFigure,
-                         arrowstyle="-|>", color="gray", lw=1.0,
-                         mutation_scale=10, figure=fig)
-fig.patches.append(arrow)
-fig.text(0.085, 0.855, "λ_c increases →", fontsize=5.5, color="gray",
-         va="center", style="italic")
+arrow = FancyArrowPatch((0.02, 0.93), (0.07, 0.93),
+                         transform=ax.transAxes,
+                         arrowstyle="-|>", color="gray", lw=0.9,
+                         mutation_scale=8)
+ax.add_patch(arrow)
+ax.text(0.085, 0.925, "λ_c ↑", fontsize=5.5, color="gray", style="italic",
+        transform=ax.transAxes, va="center")
+
+# Super title
+fig.text(0.5, 0.97,
+         "Pareto frontier: NDCG@20 vs CS@20 under varying inference-time penalty λ_c",
+         ha="center", fontsize=6.5, style="italic")
 
 out_path = os.path.join(OUT, "lambda_c_pareto.pdf")
 fig.savefig(out_path, bbox_inches="tight", facecolor="white")
