@@ -11,6 +11,7 @@
 import math
 import os
 import random
+import time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -272,6 +273,18 @@ class TRIER_PT(nn.Module):
     # Purpose: Return item weights with side info added (for scoring)
     # Output: [n_items, hidden_size] = item_emb + type_emb + author/music/dur_emb
     # --------------------------
+    def _vec_to_device(self, vecs):
+        """Return a device-resident copy of the (constant) item2vec table,
+        caching it per source object. Avoids a CPU->GPU copy on every batch.
+        If the table is already on the target device, return it as-is."""
+        if getattr(vecs, "device", None) == self.device:
+            return vecs
+        cached = getattr(self, "_i2v_dev_cache", None)
+        if cached is None or cached[0] != id(vecs):
+            cached = (id(vecs), vecs.to(self.device))
+            self._i2v_dev_cache = cached
+        return cached[1]
+
     def combined_item_weight(self):
         weight = self.item_embedding.weight
         if self.use_type:
@@ -302,33 +315,44 @@ class TRIER_PT(nn.Module):
         input_length = (input_reverse_ids > 0).sum(-1)
         new_batch_size = batch_size * beam_width
 
-        # Get hidden state from RT model (reverse trajectory encoding)
-        H_left = reverse_model.forward(input_reverse_ids, input_length)  # [batch_size, hidden_size]
-        
-        # Predict next item probabilities (left-side generation)
-        next_probabilities = torch.matmul(H_left, reverse_model.item_embedding.weight.T).log_softmax(-1)
-        
-        # Get top-k candidates using beam search
-        probabilities, idx = next_probabilities.topk(k=beam_width, axis=-1)
+        # The RT model is FROZEN (requires_grad=False, .eval() set in main_pt):
+        # its beam search runs (k-1) sequential transformer forwards over
+        # batch*beam_width padded-to-mml sequences PLUS (k-1) full-vocab
+        # log-softmaxes PER BATCH. Building an autograd graph through it is
+        # pure waste — its only consumers here are integer beam tokens
+        # (gradients cannot flow through ids) and the attention weights,
+        # which the caller .detach()es. no_grad removes that graph and all
+        # retained activations; numerics are identical.
+        with torch.no_grad():
+            # Get hidden state from RT model (reverse trajectory encoding)
+            H_left = reverse_model.forward(input_reverse_ids, input_length)  # [batch_size, hidden_size]
 
-        # Repeat sequences for beam search expansion
-        input_reverse_ids = input_reverse_ids.repeat((beam_width, 1, 1)).transpose(0, 1).flatten(end_dim=-2)
-        seq_token = seq_token.repeat((beam_width, 1, 1)).transpose(0, 1).flatten(end_dim=-2)
-        input_length = input_length.repeat((beam_width, 1)).transpose(0, 1).reshape(new_batch_size)
-        gen_token = idx.view(-1, 1).squeeze(-1)
+            # Predict next item probabilities (left-side generation)
+            next_probabilities = torch.matmul(H_left, reverse_model.item_embedding.weight.T).log_softmax(-1)
 
-        # Continue beam search generation
-        input_reverse_ids, rec_list, _, probabilities = reverse_model.k_select_1(input_reverse_ids, probabilities,
-                                                                                 gen_token, input_length, predictions=self.args.lm)
-        
-        # Flip generated list to get correct order
-        gen_items = torch.flip(rec_list, dims=[1])
-        
-        # Update sequence with generated items (left-side augmentation)
-        seq_token = torch.roll(seq_token, shifts=gen_items.shape[1])
-        seq_token[torch.arange(new_batch_size), : gen_items.shape[1]] = gen_items
-        
-        # Get embeddings for each beam (used as intent representation)
+            # Get top-k candidates using beam search
+            probabilities, idx = next_probabilities.topk(k=beam_width, axis=-1)
+
+            # Repeat sequences for beam search expansion
+            input_reverse_ids = input_reverse_ids.repeat((beam_width, 1, 1)).transpose(0, 1).flatten(end_dim=-2)
+            seq_token = seq_token.repeat((beam_width, 1, 1)).transpose(0, 1).flatten(end_dim=-2)
+            input_length = input_length.repeat((beam_width, 1)).transpose(0, 1).reshape(new_batch_size)
+            gen_token = idx.view(-1, 1).squeeze(-1)
+
+            # Continue beam search generation
+            input_reverse_ids, rec_list, _, probabilities = reverse_model.k_select_1(input_reverse_ids, probabilities,
+                                                                                     gen_token, input_length, predictions=self.args.lm)
+
+            # Flip generated list to get correct order
+            gen_items = torch.flip(rec_list, dims=[1])
+
+            # Update sequence with generated items (left-side augmentation)
+            seq_token = torch.roll(seq_token, shifts=gen_items.shape[1])
+            seq_token[torch.arange(new_batch_size), : gen_items.shape[1]] = gen_items
+
+        # Get embeddings for each beam (used as intent representation).
+        # This is the PT model's OWN encoder: F feeds the diversity scorer
+        # and MUST stay differentiable. Its inputs are integer token ids.
         if use_decoder:
             F = self.forward_decoder(seq_token, None).view(batch_size, beam_width, -1)
         else:
@@ -383,20 +407,23 @@ class TRIER_PT(nn.Module):
         # Calculate sequence lengths
         item_seq_len = (input_session_ids > 0).sum(-1)  # [batch_size]
 
+        # A mark OPENS the named timing interval (closed by the next mark).
+        self._tmark('enc_main')
         # Get encoder output (dense=True returns all positions for dense CE)
         output = self.forward(input_session_ids, item_seq_len, dense=getattr(self.args, 'dense', False))
-        
+
         # Initialize loss components
         div_loss, nce_loss, consec_loss = 0, 0, 0
 
         # Calculate diversity loss and consecutive similarity loss if enabled
         if self.div:
+            self._tmark('fwd_RT_beam')
             # Get left-side augmented hidden states (F) using RT model
             F, probabilities = self.forward_RT(input_session_ids, input_reverse_ids, rt_model)
-            
+
             # Compute attention weights from generation probabilities
             weight = probabilities.softmax(-1).unsqueeze(1).detach()
-            
+
             # In dense mode the encoder returns [batch, seq_len, hidden]; beam
             # generation scores the whole session, so gather the last real
             # position (item_seq_len-1, official TRIER semantics) first.
@@ -404,13 +431,16 @@ class TRIER_PT(nn.Module):
             if getattr(self.args, 'dense', False):
                 gen_rep = self.gather_indexes(output, torch.clamp(item_seq_len, min=1) - 1)
 
+            self._tmark('generate_by_score')
             # Generate recommendations with and without diversity consideration
             output_logit, output_logit_greedy, output_token, output_token_greedy = \
                 self.generate_by_score(input_session_ids, gen_rep, F, weight)
-            
+
+            self._tmark('diversity_loss')
             # Calculate diversity loss
             div_loss = self.diversity_loss(output_logit, output_logit_greedy, output_token, output_token_greedy, item2vec)
-            
+
+            self._tmark('order_loss')
             # Calculate consecutive similarity loss on diverse recommendations (if enabled)
             if self.use_soft_order:
                 # Differentiable order loss: soft selection keeps the graph
@@ -422,6 +452,7 @@ class TRIER_PT(nn.Module):
                 consec_loss = self.consecutive_similarity_loss(output_token, item2vec)
 
         # Calculate contrastive (NCE) loss if SSL is enabled
+        self._tmark('nce_loss')
         if self.ssl == 'us_x':
             nce_loss = self.contrastive_loss(input_session_ids, sem_aug_input_session_ids, item_seq_len)
 
@@ -442,9 +473,11 @@ class TRIER_PT(nn.Module):
         output_token, output_token_greedy = [], []  # With diversity / without diversity
         output_logit, output_logit_greedy = [], []  # Logits for diversity / greedy
         
-        # Index for batch operations
-        index_dim0 = torch.arange(batch_size)
-        
+        # Index for batch operations (on-device: a CPU index tensor used in
+        # cuda advanced-indexing assignments triggers a cross-device transfer
+        # plus synchronization on every decode step)
+        index_dim0 = torch.arange(batch_size, device=device)
+
         # Number of items to generate (k for training, 20 for testing)
         tgt_seq_length = self.args.k if not test else 20
         
@@ -455,12 +488,24 @@ class TRIER_PT(nn.Module):
         
         # Initial hidden state
         H_input = output.clone()
-        
+
+        # Combined item+side-info weight and the prospective-intent coverage
+        # distribution P_va depend ONLY on F, the (fixed-during-this-forward)
+        # model parameters and tau_o — they are identical at every one of the
+        # k decode steps. Previously both were rebuilt inside calculate_score
+        # on every step: combined_item_weight() reconstructs a full-vocab
+        # [n_items, h] type/author/... embedding matrix and P_va is a
+        # [batch, bw, n_items] matmul + softmax. Build each ONCE and reuse the
+        # exact graph node (backward accumulates grads correctly).
+        W_all = self.combined_item_weight()
+        tau_o = float(getattr(self.args, 'tau_o', 0.1) or 0.1)
+        P_va = (torch.matmul(F, W_all.T) * (1.0 / tau_o)).softmax(-1)
+
         # Calculate relevance scores (logits) using combined item+type weights
-        logit = torch.matmul(H_input, self.combined_item_weight().T)
+        logit = torch.matmul(H_input, W_all.T)
         rel_score = logit.softmax(-1)
         rel_score = rel_score * mask.clone()
-        
+
         # Step-by-step generation
         for cnt in range(tgt_seq_length):
             if cnt == 0:
@@ -470,7 +515,8 @@ class TRIER_PT(nn.Module):
                 score = rel_score.clone()
             else:
                 # Subsequent items: combine relevance and diversity scores
-                score = self.calculate_score(rel_score, output_token, F, attention_weght)
+                score = self.calculate_score(rel_score, output_token, F,
+                                             attention_weght, W_all, P_va)
                 # masked_fill (not score*mask): the consec penalty can push valid
                 # scores below 0, and masked items sit at exactly 0 -> duplicates.
                 top1 = score.masked_fill(mask == 0, -1e9).argmax(-1)
@@ -503,27 +549,32 @@ class TRIER_PT(nn.Module):
     # Input: Relevance scores, already recommended tokens, augmented hidden states, attention weights
     # Output: Combined score
     # --------------------------
-    def calculate_score(self, rel_score, output_token, F, attention_weght):
+    def calculate_score(self, rel_score, output_token, F, attention_weght,
+                        W_all=None, P_va=None):
         # Trade-off parameter (lambda)
         lamb = self.args.lamb
-        
-        # Calculate diversity score using augmented trajectories (combined item+type weights)
-        # Prospective intent temperature tau_o: sharpness multiplier 1/tau_o
-        # (default 0.1 reproduces the original hardcoded x10).
-        tau_o = float(getattr(self.args, 'tau_o', 0.1) or 0.1)
-        P_va = (torch.matmul(F, self.combined_item_weight().T) * (1.0 / tau_o)).softmax(-1)
+
+        # Prospective-intent coverage P_va and the full-vocab combined weight
+        # are loop-invariant: compute once in generate_by_score and pass them
+        # in. Fallbacks keep the method self-contained for external callers.
+        if W_all is None:
+            W_all = self.combined_item_weight()
+        if P_va is None:
+            tau_o = float(getattr(self.args, 'tau_o', 0.1) or 0.1)
+            P_va = (torch.matmul(F, W_all.T) * (1.0 / tau_o)).softmax(-1)
         P_a_u = attention_weght + 1e-24  # Avoid division by zero
-        
+
         # Prepare already recommended items for encoding
         output_token = torch.stack(output_token, dim=1)
         a, b = output_token.shape
-        
-        # Pad recommended items to max sequence length
-        H_y_input = torch.cat((output_token, torch.zeros((a, self.args.mml - b), device=self.device)), dim=1)
-        
-        # Encode recommended items to get context
-        item_seq_len = (H_y_input > 0).sum(-1)
-        item_seq_len = torch.clamp(item_seq_len, min=1)
+
+        # Encode the recommended prefix. Feed its ACTUAL length b (1..k) rather
+        # than padding to mml=72: only the last-position hidden state is used,
+        # the encoder is causal with a padding key-mask, and position ids are
+        # identical, so the result is the same while the per-step transformer
+        # runs on <=k tokens instead of mml (was up to ~mml/k wasted compute).
+        H_y_input = output_token
+        item_seq_len = torch.full((a,), b, device=self.device, dtype=torch.long)
         H_y = self.forward(H_y_input.long(), item_seq_len).unsqueeze(1)
         
         # Calculate attention weights for diversity
@@ -595,8 +646,8 @@ class TRIER_PT(nn.Module):
     # Output: Consecutive similarity loss value
     # --------------------------
     def consecutive_similarity_loss(self, output_token, item2vec):
-        # Move item embeddings to device
-        item2vec = item2vec.to(self.device)
+        # Cache the CPU->device copy of the constant item2vec table
+        item2vec = self._vec_to_device(item2vec)
         
         # Get embeddings for recommended items
         # output_token shape: [batch_size, seq_len]
@@ -645,7 +696,14 @@ class TRIER_PT(nn.Module):
     # --------------------------
     def soft_order_loss(self, output_logit, item2vec, temp=None, margin=0.5):
         temp = float(getattr(self.args, 'soft_order_temp', 1.0)) if temp is None else float(temp)
-        vecs = item2vec.to(self.device)                       # [n_items, d_v], constant
+        # item2vec is a constant CPU table; copy it to the device ONCE and
+        # reuse (keyed by source object id in case it is ever swapped).
+        cached = getattr(self, "_i2v_dev_cache", None)
+        if cached is None or cached[0] != id(item2vec):
+            vecs = item2vec.to(self.device)                  # [n_items, d_v], constant
+            self._i2v_dev_cache = (id(item2vec), vecs)
+        else:
+            vecs = cached[1]
         # IMPORTANT: output_logit entries are NOT raw logits. They are the
         # diverse-decoder selection scores from calculate_score, i.e. a
         # probability-scale convex mixture (1-lambda) P_rel + lambda P_cov

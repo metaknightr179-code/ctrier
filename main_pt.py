@@ -384,14 +384,22 @@ if __name__ == '__main__':
             start_time = time.time()  # Track epoch time
             
             total_batches = len(dataloader)
+            # STEP_TIMERS=1: per-section wall-clock profiling (data pipeline,
+            # H2D copies, each forward section, dense CE, backward+step).
+            _timers_on = bool(os.environ.get("STEP_TIMERS"))
+            model._tmark('data_wait')  # open the first interval
             # Iterate over batches
             for batch in dataloader:
                 step += 1
+                # Interval 'data_wait' closes here: num_workers=0, so this is
+                # main-thread batch construction + collation from the prior
+                # optimizer.step() to this point.
+                model._tmark('zero_grad+h2d')
                 optimizer.zero_grad()  # Reset gradients
-                
+
                 # Unpack batch data (6 fields: includes dense_targets when -dense flag is set)
                 input_session_ids, targets, negatives, sem_aug_input_session_ids, input_reverse_ids, dense_targets = batch
-                
+
                 # Move data to GPU if available
                 if torch.cuda.is_available():
                     input_session_ids = input_session_ids.cuda()
@@ -402,34 +410,52 @@ if __name__ == '__main__':
                     dense_targets = dense_targets.cuda()
 
                 # Forward pass: get model outputs and loss components
+                # (train_forward marks enc_main/fwd_RT_beam/generate_by_score/
+                #  diversity_loss/order_loss/nce_loss on the same timer chain)
                 output, nce_loss, div_loss, consec_loss = model.train_forward(input_session_ids, sem_aug_input_session_ids,
                                             input_reverse_ids, rt_model, item2vec)
 
                 # Calculate total loss (reconstruction + NCE + diversity + consecutive similarity)
                 # Pass dense_targets only when -dense flag is active
                 dt = dense_targets if getattr(args, 'dense', False) else None
+                model._tmark('rec_loss')
                 loss, main_loss = model.rec_loss(output, targets, nce_loss, div_loss, consec_loss, dense_targets=dt)
-                
+
                 # Skip batch if loss is NaN or Inf (numerical instability)
                 if torch.isnan(loss) or torch.isinf(loss):
                     print(f"NaN/Inf loss detected at step {step}, skipping", flush=True)
                     continue
-                
+
                 # Backward pass: compute gradients
+                model._tmark('backward+step')
                 loss.backward()
 
                 # Update model weights
                 optimizer.step()
-                
+
                 # Accumulate losses for logging
                 loss_avg += loss
                 loss_acc += main_loss
                 loss_div += div_loss
                 loss_nce += nce_loss
-                
+
+                # Open the data_wait interval for the NEXT iteration
+                model._tmark('data_wait')
+
                 # Log training progress periodically
                 if step % log_step == 0 or step == total_batches:
                     print('epoch %d step %d/%d loss %0.4f time %d' % (epoch, step, total_batches, loss_avg.item() / step, time.time()-start_time), flush=True)
+                    if _timers_on:
+                        # The currently-open 'data_wait' interval holds one
+                        # unfinished sample; exclude it from the report.
+                        acc = dict(model._timer_acc)
+                        means = sorted((acc.items()), key=lambda kv: -kv[1])
+                        prof = '  '.join('%s=%.0fms' % (k, v / step * 1000.0) for k, v in means)
+                        print('  [timers avg/step] ' + prof, flush=True)
+                        # Reset for the next log window (steady-state timing)
+                        model._timer_acc = {}
+                        model._timer_last = 'data_wait'
+                        model._timer_t0 = time.time()
 
             # Calculate average loss for this epoch
             avg_loss = loss_avg.item() / step if step > 0 else float('inf')
