@@ -1,0 +1,75 @@
+% ========================================================================
+% Hyperparameter sensitivity study — two subsubsections.
+%
+% Usage:  \input{figures/hyperparam_study}
+%   (put inside your Experiments or Ablation section, after the main results table)
+%
+% Requires figures: figures/tau_s_bars.pdf, figures/gamma_o_bars.pdf
+% ========================================================================
+
+
+\subsection{Hyperparameter Sensitivity}
+\label{sec:hyperparam}
+
+\subsubsection{Prospective-intent temperature $\tau_s$}
+\label{sec:hyperparam_tau}
+
+Figure~\ref{fig:tau_s_bars} sweeps the prospective-intent temperature
+$\tau_s\in\{0.05, 0.1, 0.2, 0.5, 1.0\}$ that sharpens the content-novelty
+distribution $P_a(j)=\mathrm{softmax}(Fw_j/\tau_s)$. The trend is
+\emph{monotonic}: lower $\tau_s$ concentrates probability mass on a small
+set of content-matching candidates and produces consistently better accuracy
+and lower repetition. $\tau_s=0.1$ is the default we use across PACER — it is
+the sweet spot between sharpness ($\tau_s=0.05$, where HR@20 peaks at $0.2197$)
+and stability ($\tau_s\geq0.2$, where HR@20 drops to $0.1970$). CS@20 stays
+near zero across $\tau_s\in\{0.05, 0.1\}$ before rising sharply to $0.03$ at
+$\tau_s=1.0$, confirming that the content-novelty scorer is orthogonal to
+the set-level diversity it complements. ILD@20 stays above $1.58$ across the
+full range, confirming that the diversity scorer and the order scorer do not
+interfere with each other.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/tau_s_bars.pdf}
+\caption{Sensitivity to the prospective-intent temperature $\tau_s$ that
+sharpens the content-novelty distribution $P_a(j)$. Accuracy (HR/NDCG) is best
+at low $\tau_s$, repetition (CS@20, MaxRun@20) degrades as $\tau_s\rightarrow 1$.
+$\tau_s=0.1$ is the default --- a stable point that keeps accuracy near its peak
+while avoiding the excessive concentration of $\tau_s=0.05$.}
+\label{fig:tau_s_bars}
+\end{figure}
+
+
+\subsubsection{Adjacent-order training weight $\gamma_o$ (PACER)}
+\label{sec:hyperparam_gamma}
+
+Figure~\ref{fig:gamma_o_bars} sweeps the training loss weight
+$\gamma_o\in\{0, 0.001, 0.005, 0.01, 0.05, 0.1\}$ on the soft consecutive-order
+loss $\mathcal{L}_{\text{order}}$. The plot reveals a \textbf{frustrated regime}
+at $\gamma_o=0.01$: accuracy peaks there (NDCG@20 = $0.1271$, +20\% over
+$\gamma_o=0$) but repetition \emph{worsens} simultaneously
+(CS@20 = $0.1675$, MaxRun@20 = $4.23$, both the worst in the sweep). As
+$\gamma_o$ grows past $0.01$, $\mathcal{L}_{\text{order}}$ dominates the
+cross-entropy objective and accuracy collapses — at $\gamma_o=0.1$, NDCG@20
+drops to $0.0836$. CS@20 and MaxRun@20 recover to near-baseline levels at
+both extremes ($\gamma_o=0$ and $\gamma_o\geq 0.05$), showing that training
+$\mathcal{L}_{\text{order}}$ alone cannot reduce repetition during greedy
+decode. This is the primary motivation for PACER's \emph{separate}
+inference-time order mechanism — the hard penalty $-\lambda_c C_s(j)$ is a
+controllable knob that complements the training loss. We use $\gamma_o=0.01$
+as the default training weight (best-accuracy point), and report the
+$\lambda_c$ inference-penalty sweep separately (Section~\ref{sec:lambda_c}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/gamma_o_bars.pdf}
+\caption{Sensitivity to the training weight $\gamma_o$ on the soft order loss
+$\mathcal{L}_{\text{order}}$ (PACER, KuaiRec First-Average, $\lambda_c=0$ at
+inference). Accuracy peaks at $\gamma_o=0.01$ but repetition \emph{worsens}
+there --- the frustrated regime where $\mathcal{L}_{\text{order}}$ reshapes
+the hidden space but does not translate to improved greedy ordering.
+Repetition recovers at both extremes, confirming that training
+$\mathcal{L}_{\text{order}}$ alone cannot solve repetition; hence the need
+for the separate inference-time $\lambda_c$ penalty.}
+\label{fig:gamma_o_bars}
+\end{figure}
