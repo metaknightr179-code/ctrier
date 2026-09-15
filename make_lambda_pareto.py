@@ -102,37 +102,35 @@ plt.rcParams.update({
 
 ORDER = ["TRIER", "TRIER-C", "TRIER-L", "PACER-Full"]
 
-# Wider figure + generous top margin so legend/caption don't collide
-fig, ax = plt.subplots(1, 1, figsize=(6.2, 3.8))
-# top=0.70 leaves 30% of figure height for legend + arrow hint + title above the plot
-fig.subplots_adjust(left=0.13, right=0.95, top=0.70, bottom=0.18)
+# Shift CS values by ε so CS=0 maps to a finite log value.
+ε = 0.00005   # 5e-5 — small enough that it doesn't visually shift any real CS
 
-# We'll collect x/y limits across all families for tight shared axes
-all_xs, all_ys = [], []
+def xform(cs):
+    """True CS → shifted CS for log-scale plotting."""
+    return cs + ε
+
+fig, ax = plt.subplots(1, 1, figsize=(6.2, 3.8))
+fig.subplots_adjust(left=0.13, right=0.95, top=0.70, bottom=0.18)
 
 for fam in ORDER:
     pts = FAMILIES[fam]
-    xs = [p[2] for p in pts]
+    # log-transformed x (add ε), true y
+    xs = [xform(p[2]) for p in pts]
     ys = [p[1] for p in pts]
-    all_xs.extend(xs); all_ys.extend(ys)
     color = PANEL_COLORS[fam]
     hl = PANEL_HIGHLIGHT[fam]
 
-    # thin line connecting all points (lower zorder than points)
     ax.plot(xs, ys, color=color, lw=0.85, alpha=0.60, zorder=3)
-
-    # small filled circles
     ax.scatter(xs, ys, s=14, c=color, zorder=5, edgecolor="white",
                linewidths=0.3, label=fam)
 
-    # arrow on the LAST segment only (direction hint)
     if len(xs) >= 2:
         i = len(xs) - 2
         ax.annotate("", xy=(xs[i+1], ys[i+1]), xytext=(xs[i], ys[i]),
                     arrowprops=dict(arrowstyle="-|>", color=hl, lw=0.8,
                                     mutation_scale=8))
 
-    # Highlight λ=0 start point (open ring) — tiny
+    # λ=0 start ring
     ax.scatter([xs[0]], [ys[0]], s=22, c="none", zorder=6,
                edgecolors=hl, linewidths=0.8)
 
@@ -140,69 +138,58 @@ for fam in ORDER:
 ax.set_xlabel("CS@20  (mean adjacent cosine, ↓ better)", labelpad=3)
 ax.set_ylabel("NDCG@20  (↑ better)", labelpad=3)
 
-# TIGHT linear x-axis on the repair region. The λ_c=0 outlier points sit at
-# CS ∈ [0.08, 0.17] (far right) and are NOT drawn on the main plot — instead
-# we show them as dashed lead-in arrows so the *repair dynamics* (the actual
-# story) are not compressed into invisibility.
-X_MAX = 0.025   # covers all λ≥0.001 points with room to breathe
-ax.set_xlim(0, X_MAX)
+# LOG x-scale — exponentially increasing tick values → equally spaced on axis.
+# CS=0 → ε=5e-5 which is the leftmost tick.
+# λ=0 sits at CS ≈ 0.08–0.17 (far right), λ≥0.001 at CS ≤ 0.06.
+ax.set_xscale("log")
+ax.set_xlim(ε * 0.8, xform(0.20))   # left: just below CS=0, right: well past max CS
 
-# y-axis: tight on the NDCG range of the plotted points
-# Exclude the extreme TRIER-L λ=0 NDCG=0.0670 outlier when computing range
-# (we don't plot it on-axis anyway)
-plotted_ys = []
-for fam in ORDER:
-    pts = FAMILIES[fam]
-    plotted_ys.extend([p[1] for p in pts if p[2] <= X_MAX])
-y_lo, y_hi = min(plotted_ys), max(plotted_ys)
-y_span = y_hi - y_lo
-y_margin = y_span * 0.15
+# y-axis: tight on NDCG range (include all families including TRIER-L low NDCG)
+y_lo = min([p[1] for fam in ORDER for p in FAMILIES[fam]])
+y_hi = max([p[1] for fam in ORDER for p in FAMILIES[fam]])
+y_margin = (y_hi - y_lo) * 0.10
 ax.set_ylim(y_lo - y_margin, y_hi + y_margin)
 
-# x-ticks — clean, readable
-ax.set_xticks([0, 0.005, 0.01, 0.015, 0.02])
-ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.3f"))
+# Custom x-ticks with TRUE CS values as labels (not CS+ε)
+# Ticks at log-spaced positions; the formatter subtracts ε before displaying
+true_ticks = [0.0, 0.001, 0.005, 0.01, 0.05, 0.1]
+tick_positions = [xform(t) for t in true_ticks]
+ax.set_xticks(tick_positions)
+# Subtract ε to show the real CS value, handle CS=0 edge case
+def true_cs_fmt(val, pos):
+    real = val - ε
+    if real <= 0:
+        return "0"
+    return f"{real:.3g}"
+ax.xaxis.set_major_formatter(mticker.FuncFormatter(true_cs_fmt))
 
-# grid
-ax.grid(True, linestyle=":", alpha=0.4, zorder=0)
+# grid — major + minor log ticks
+ax.grid(True, linestyle=":", alpha=0.4, zorder=0, which="both")
 ax.tick_params(axis="both", which="major", pad=1)
+ax.tick_params(axis="x", which="minor", length=1.5)
 
-# spines
 for spine in ["top", "right"]:
     ax.spines[spine].set_visible(False)
 
-# ── λ=0 LEAD-IN ARROWS ───────────────────────────────────────────────────
-# For each family, draw a thin dashed arrow that starts at the right edge of
-# the plot (X_MAX, that family's last-plotted-point NDCG) and goes to the
-# actual λ=0 location (CS=x0, NDCG=y0). Arrow label says "λ=0".
-# This communicates that the pre-penalty state is further right than shown.
-from matplotlib.patches import FancyArrowPatch as FAP
-for fam in ORDER:
-    pts = FAMILIES[fam]
-    x0, y0 = pts[0][2], pts[0][1]          # λ_c=0  (off-axis, far right)
-    # find the rightmost point we *do* plot (largest CS ≤ X_MAX)
-    plotted = [(p[2], p[1]) for p in pts if p[2] <= X_MAX]
-    if not plotted:
-        continue
-    x_plot, y_plot = plotted[-1]            # e.g. (0.02, NDCG at λ=0.1)
-    color = PANEL_HIGHLIGHT[fam]
+# ── Legend + direction hint + title ─────────────────────────────────────
+# Legend: 4-col flat row at top of figure
+leg = fig.legend(labels=ORDER, loc="upper center",
+                 bbox_to_anchor=(0.5, 0.975),
+                 ncol=4, frameon=False, fontsize=7,
+                 handlelength=1.2, handletextpad=0.5, columnspacing=1.5)
 
-    # Dashed connector from (X_MAX, y_plot) → (x0, y0), clipped by xlim
-    # We'll manually clip it by only drawing up to X_MAX
-    ax.annotate("",
-                xy=(x0, y0),                # λ=0 destination (off-axis right)
-                xytext=(X_MAX, y_plot),       # start at right edge of plot
-                xycoords="data",
-                arrowprops=dict(arrowstyle="-",
-                                color=color,
-                                lw=0.8,
-                                linestyle="--",
-                                alpha=0.7))
-    # tiny text at (X_MAX + 0.0005, y_plot) saying "λ=0→"
-    ax.text(X_MAX + 0.0002, y_plot, "λ=0→", fontsize=5,
-            color=color, va="center", style="italic")
+from matplotlib.patches import FancyArrowPatch
+arrow = FancyArrowPatch((0.02, 0.90), (0.08, 0.90),
+                         transform=fig.transFigure,
+                         arrowstyle="-|>", color="gray", lw=0.9,
+                         mutation_scale=9, figure=fig)
+fig.patches.append(arrow)
+fig.text(0.095, 0.895, "λ_c increases  →", fontsize=6, color="gray",
+         va="center", style="italic")
 
-# ── Legend + direction hint + title — stacked, non-overlapping ──────────
+fig.text(0.5, 0.855,
+         "Pareto trade-off: NDCG@20 vs CS@20 under varying inference-time penalty λ_c",
+         ha="center", fontsize=7, style="italic")
 
 out_path = os.path.join(OUT, "lambda_c_pareto.pdf")
 fig.savefig(out_path, bbox_inches="tight", facecolor="white")
